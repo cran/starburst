@@ -1,0 +1,19 @@
+# staRburst Worker Docker Image
+# This template is used to build worker containers with user's R environment
+
+FROM {{BASE_IMAGE}}
+
+# Copy renv lock file
+COPY renv.lock /app/renv.lock
+
+# Set working directory
+WORKDIR /app
+
+# Initialize renv and restore packages
+RUN R -e "renv::init(bare = TRUE); renv::restore()"
+
+# Copy worker script
+COPY worker.R /app/worker.R
+
+# Set entrypoint
+ENTRYPOINT ["Rscript", "/app/worker.R"]
