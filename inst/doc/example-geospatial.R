@@ -188,7 +188,7 @@ knitr::opts_chunk$set(
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 # 
-# cat(sprintf("✓ Completed in %.2f seconds\n", local_time))
+# cat(sprintf("[OK] Completed in %.2f seconds\n", local_time))
 # cat(sprintf("  Processed %d stores\n", nrow(local_metrics)))
 # cat(sprintf("  Estimated time for all %d regions: %.1f seconds\n",
 #             nrow(regions), local_time * (nrow(regions) / length(test_regions))))
@@ -213,7 +213,7 @@ knitr::opts_chunk$set(
 # 
 # cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "secs"))
 # 
-# cat(sprintf("\n✓ Completed in %.1f seconds\n", cloud_time))
+# cat(sprintf("\n[OK] Completed in %.1f seconds\n", cloud_time))
 # 
 # # Combine results
 # spatial_metrics <- do.call(rbind, results)

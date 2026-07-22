@@ -1,3 +1,144 @@
+# starburst 0.3.9 (2026-07-22)
+
+## Cost & cleanup fixes (important)
+
+* **The `max_hourly_cost` guard now works on the EC2 backend (the default).**
+  Previously `estimate_cost()` returned `per_hour` for Fargate but `total_per_hour`
+  for EC2, and the guard read `per_hour` — which is `NULL` on EC2 — so the cost
+  ceiling was silently never enforced on the default backend. `estimate_cost()` now
+  returns a normalized `hourly_rate` for every backend, and the guard, cost display,
+  and `starburst_map()`/`starburst_cluster()` all use it.
+* **`cost_alert_threshold` is now enforced** — it warns when a plan's estimated
+  hourly rate exceeds it (previously it was stored but never read).
+* **`starburst_config(auto_cleanup_s3 = …)` now actually controls S3 cleanup.** The
+  runtime read a different key (`getOption("starburst.cleanup_s3")`) and ignored the
+  stored setting; cleanup now resolves option → `auto_cleanup_s3` config → default TRUE.
+* **`starburst_map()`/`starburst_cluster()` cost estimates match the backend used** —
+  they forward `launch_type`/`instance_type`/`use_spot`, so an EC2 job no longer
+  reports a Fargate price.
+* **Cost estimates now use live AWS pricing** (Pricing API for On-Demand, EC2
+  spot-price history for Spot), cached per session with a built-in static-rate
+  fallback when offline. Reported costs are **estimates** (measured runtime × current
+  rate), not AWS billing figures; docs reworded accordingly.
+
+## New features
+
+* **`starburst_setup()` now provisions the default EC2 capacity provider** (for
+  `c7g.xlarge`) so the default EC2 backend works out of the box — previously the
+  first `starburst_map()`/`plan(starburst)` run failed because no capacity provider
+  existed. It is created at `DesiredCapacity = 0` (no billable instances launch
+  during setup). Pass `setup_ec2 = FALSE` to skip (Fargate-only users). (#37)
+* **Custom EC2 instance types are now provisioned automatically on first use.**
+  Selecting a non-default `instance_type` (e.g. `c8a.xlarge`) previously failed with
+  an opaque "AutoScalingGroup not found" because only the default was provisioned.
+  Now the capacity provider/ASG is created on demand at first launch (a one-time
+  ~1–2 min step; no instances launched by provisioning), or on failure you get the
+  exact `starburst_setup_ec2(instance_types = "…")` command to run.
+
+## Behavior changes
+
+* **Detached `session$collect()` now returns an entry for every terminal task**,
+  including failures. A failed task comes back as a structured failure
+  (`list(error = TRUE, message = …, task_id = …)`) alongside successful results,
+  instead of being silently omitted — matching the documented contract.
+* Clarified `session$cleanup()`: by default it stops workers and marks the session
+  terminated but **preserves S3 objects**; pass `force = TRUE` to also delete them.
+  (Behavior unchanged; the docs were wrong and are now correct.)
+
+## Breaking changes
+
+* **Removed the `platform` argument from `starburst_map()` and
+  `starburst_cluster()`.** It was ignored (architecture is inferred from
+  `instance_type`: Graviton `*g.*` → ARM64, else x86_64), and its `"X86_64"`
+  default even contradicted the ARM64 `c7g.xlarge` default. Drop it from calls; the
+  backend picks the architecture from `instance_type`. (`platform` remains on
+  `starburst_estimate()`, where it is functional.)
+* **Renamed `starburst_config(max_cost_per_job=)` to `max_hourly_cost`.** The limit
+  was always enforced as an hourly *rate* (USD/hour), not a total-job cap; the new
+  name matches the behavior. Update any `starburst_config(max_cost_per_job = ...)`
+  calls to `max_hourly_cost = ...`.
+
+## Bug fixes
+
+* **`starburst_map()` and `starburst_cluster()` now accept `launch_type`,
+  `instance_type`, and `use_spot`** and forward them to the backend. Previously
+  these functions had no backend arguments, so a call like
+  `starburst_map(x, f, launch_type = "FARGATE")` silently passed `launch_type`
+  to the mapped function `.f` (typically an "unused argument" error) instead of
+  switching the backend — contradicting the 0.3.7 migration note. Backend
+  selection now works uniformly across `plan(starburst)`, `starburst_map()`,
+  `starburst_cluster()`, and `starburst_session()`.
+* Fixed broken/misleading examples: the README detached-session example used a
+  nonexistent `detached = TRUE` argument; S3-read examples used base `read.csv()`/
+  `readRDS(url())` which cannot read `s3://`; and the API rate-limit example
+  aggregated to 10× its stated global limit across workers.
+* **Public base images are now built multi-arch (amd64 + arm64).** They were
+  published amd64-only, so `use_public_base = TRUE` failed the multi-arch
+  environment build with "no match for platform in manifest" for arm64. The
+  `build-base-images` workflow now builds both architectures (matching the env
+  build), so the public base path works. (#39)
+
+## Documentation
+
+* Consistency sweep addressing an external documentation review: EC2 is now
+  consistently presented as the default/recommended backend with Fargate as the
+  optional alternative; the README and example console output match the current
+  engine (ASCII status markers, one task per input element — no chunking step);
+  the Getting Started tutorial leads with `starburst_map()`; a grouped reference
+  index and an architecture diagram were added; and `starburst_config()` keys are
+  now catalogued.
+* Trimmed the Getting Started tutorial: the inline Monte Carlo / bootstrap /
+  genomics snippets (which showed unbatched `future_map(1:10000, …)` and
+  hand-written speedup claims) now link to the canonical, measured example articles
+  and the Workload Shapes / Performance guides. The doc-consistency guard
+  (`tools/check-docs.R`) now also flags naive `future_map()`/`future_lapply()`
+  big-count calls, not just `starburst_map()`.
+* Removed the historical `ROADMAP.md` (a pre-1.0, Fargate-first implementation plan
+  that also carried a stale "MIT" license note); the README Roadmap section is the
+  single source of truth.
+
+# starburst 0.3.8 (2026-03-06)
+
+## Reliability & CRAN readiness
+
+### Bug fixes
+
+* **Worker script**: Removed an invalid `timeout` parameter from the paws client
+  configuration that could cause workers to fail on startup.
+* **Environment sync**: `ensure_environment()` now walks up the directory tree to
+  find the package-root `renv.lock` when invoked from a subdirectory (e.g. during
+  tests), and the environment image hash is computed consistently between build
+  and lookup, so cached worker images are reused correctly.
+* Hardened `safe_system()` usage and resolved `qs2` serialization edge cases
+  surfaced by integration tests.
+
+### Documentation & packaging
+
+* All `\donttest{}` examples are guarded with `starburst_is_configured()` so they
+  are safe to run without AWS credentials.
+* Pre-built vignettes shipped in `inst/doc/` and assorted R CMD check / CRAN
+  incoming-feasibility fixes. Package accepted on CRAN.
+
+# starburst 0.3.7 (2026-02-17)
+
+## Default backend is now EC2
+
+* **BREAKING CHANGE:** the default `launch_type` changed from `FARGATE` to **`EC2`**,
+  with spot instances enabled by default (`use_spot = TRUE`, `instance_type =
+  "c7g.xlarge"`). EC2 avoids Fargate cold starts, is 50–90% cheaper with spot, and
+  supports warm pools and a wider range of instance types. Fargate remains fully
+  supported — pass `launch_type = "FARGATE"` to `plan(starburst, ...)`,
+  `starburst_map()`, `starburst_cluster()`, or `starburst_session()` to keep the
+  previous behavior.
+* Completed the EC2 backend implementation with working end-to-end execution
+  (warm pools, capacity providers, spot support).
+
+### Migration
+
+* If you relied on the Fargate default, add `launch_type = "FARGATE"` to your
+  `plan()`/`starburst_*()` call. No other changes are required; the task API is
+  unchanged across backends.
+
 # starburst 0.3.6 (2026-02-16)
 
 ## AWS Integration Testing & Documentation

@@ -557,13 +557,13 @@ parallel processing.</p>
 <span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a></span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a></span>
-<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Processed %d stores</span><span class="sc">\n</span><span class="st">&quot;</span>, <span class="fu">nrow</span>(local_metrics)))</span>
 <span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for all %d regions: %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>            <span class="fu">nrow</span>(regions), local_time <span class="sc">*</span> (<span class="fu">nrow</span>(regions) <span class="sc">/</span> <span class="fu">length</span>(test_regions))))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Analyzing 3 regions locally...
-✓ Completed in 4.5 seconds
+[OK] Completed in 4.5 seconds
   Processed 15 stores
   Estimated time for all 20 regions: 30.0 seconds</code></pre>
 <p>For all 20 regions locally: <strong>~30 seconds</strong></p>
@@ -590,21 +590,17 @@ parallel processing.</p>
 <span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a></span>
 <span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a></span>
-<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✓ Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[OK] Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span>
 <span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a></span>
 <span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a><span class="co"># Combine results</span></span>
 <span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a>spatial_metrics <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, results)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 20 workers
-💰 Estimated cost: ~$1.60/hour
-📊 Processing 20 items with 20 workers
-📦 Created 20 chunks (avg 1 region per chunk)
-🚀 Submitting tasks...
-✓ Submitted 20 tasks
-⏳ Progress: 20/20 tasks (4.8 seconds elapsed)
-
-✓ Completed in 4.8 seconds
-💰 Actual cost: $0.002</code></pre>
+<p><strong>Illustrative output</strong>:</p>
+<pre><code>[Starting] Starting starburst cluster with 20 workers
+[Status] Processing 20 items with 20 workers
+[Starting] Submitting 20 tasks...
+[Wait] Progress: 20/20 (4.8s)
+[OK] Completed in 4.8 seconds
+[Cost] Estimated cost: $0.002</code></pre>
 </div>
 <div id="results-analysis" class="section level2">
 <h2>Results Analysis</h2>
@@ -680,7 +676,7 @@ parallel processing.</p>
 <span id="cb9-69"><a href="#cb9-69" tabindex="-1"></a>              region_summary<span class="sc">$</span>region_name[i],</span>
 <span id="cb9-70"><a href="#cb9-70" tabindex="-1"></a>              region_summary<span class="sc">$</span>market_potential[i]))</span>
 <span id="cb9-71"><a href="#cb9-71" tabindex="-1"></a>}</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Geospatial Analysis Results ===
 
 Total stores analyzed: 100
@@ -718,43 +714,69 @@ Challenged stores (high competition, low potential): 8
 </div>
 <div id="performance-comparison" class="section level2">
 <h2>Performance Comparison</h2>
-<table>
+<p>These are <strong>real measured numbers</strong> from
+<code>bench/benchmark.R</code> (see <code>bench/README.md</code>), not
+illustrations — a cold run of 20 per-region terrain tasks on live
+AWS:</p>
+<table style="width:100%;">
+<colgroup>
+<col width="35%" />
+<col width="30%" />
+<col width="35%" />
+</colgroup>
 <thead>
 <tr class="header">
-<th>Method</th>
-<th>Regions</th>
+<th>Phase</th>
 <th>Time</th>
-<th>Cost</th>
-<th>Speedup</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Local</td>
-<td>3</td>
-<td>4.5 sec</td>
-<td>$0</td>
-<td>-</td>
+<td>Local (sequential)</td>
+<td>0.1 s</td>
+<td>20 tasks on an Apple M4 Pro (12-core) — this workload is tiny</td>
 </tr>
 <tr class="even">
-<td>Local (est.)</td>
-<td>20</td>
-<td>30 sec</td>
-<td>$0</td>
-<td>1x</td>
+<td>Cloud: startup</td>
+<td>74.7 s</td>
+<td>one-time: worker provision + image pull</td>
 </tr>
 <tr class="odd">
-<td>staRburst</td>
-<td>20</td>
-<td>4.8 sec</td>
-<td>$0.002</td>
-<td>6.3x</td>
+<td>Cloud: compute + collect</td>
+<td>27.9 s</td>
+<td>submit → run on 20 workers → collect</td>
+</tr>
+<tr class="even">
+<td><strong>Cloud total (cold)</strong></td>
+<td><strong>102.6 s</strong></td>
+<td>startup + compute+collect</td>
+</tr>
+<tr class="odd">
+<td>Est. cost</td>
+<td>$0.03</td>
+<td>20× c7i.xlarge Spot</td>
 </tr>
 </tbody>
 </table>
+<p><em>(staRburst 0.3.9, us-east-1, EC2 c7i.xlarge Spot, 20 workers,
+cold start; sequential baseline on an Apple M4 Pro (Mac16,11, 12-core,
+48 GB, R 4.6.1), 2026-07-21.)</em></p>
+<blockquote>
+<p><strong>This is the honest result, and it’s a “don’t burst this”
+case.</strong> The cloud total (102.6 s) is far <em>slower</em> than
+local (0.1 s): the workload is seconds of compute, so the ~75 s of fixed
+startup dominates and there is nothing to amortize it against. Cloud
+bursting wins only when per-task work is <strong>minutes</strong> and
+there are many tasks — then compute+collect dwarfs startup. This example
+exists to show the mechanics; see <code>vignette(&quot;performance&quot;)</code>
+for when the cloud actually pays off. Regenerate this table for your own
+workload/region with <code>bench/benchmark.R</code>.</p>
+</blockquote>
 <p><strong>Key Insights</strong>: - Excellent parallelization for
-spatial operations - Near-linear scaling across regions - Minimal cost
-even with complex calculations - Can easily scale to 100+ regions</p>
+spatial operations once workers are warm - Near-linear scaling across
+regions - Minimal per-task cost even with complex calculations - Scales
+to 100+ regions, where startup overhead is amortized away</p>
 </div>
 <div id="advanced-delivery-zone-optimization" class="section level2">
 <h2>Advanced: Delivery Zone Optimization</h2>

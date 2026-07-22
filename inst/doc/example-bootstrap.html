@@ -442,10 +442,10 @@ estimates.</p>
 <span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>)</span>
 <span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a></span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.2f seconds</span><span class="sc">\n\n</span><span class="st">&quot;</span>, local_time))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.2f seconds</span><span class="sc">\n\n</span><span class="st">&quot;</span>, local_time))</span></code></pre></div>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Running 1000 bootstrap iterations locally...
-✓ Completed in 2.1 seconds</code></pre>
+[OK] Completed in 2.1 seconds</code></pre>
 </div>
 <div id="cloud-execution-with-starburst" class="section level2">
 <h2>Cloud Execution with staRburst</h2>
@@ -463,17 +463,13 @@ estimates.</p>
 <span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">1</span>,</span>
 <span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;2GB&quot;</span></span>
 <span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 25 workers
-💰 Estimated cost: ~$1.00/hour
-📊 Processing 10000 items with 25 workers
-📦 Created 25 chunks (avg 400 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 25 tasks
-⏳ Progress: 25/25 tasks (0.3 minutes elapsed)
-
-✓ Completed in 0.3 minutes
-💰 Actual cost: $0.01</code></pre>
+<p><strong>Illustrative output</strong>:</p>
+<pre><code>[Starting] Starting starburst cluster with 25 workers
+[Status] Processing 10000 items with 25 workers
+[Starting] Submitting 10000 tasks...
+[Wait] Progress: 10000/10000 (18.0s)
+[OK] Completed in 18.0 seconds
+[Cost] Estimated cost: $0.01</code></pre>
 </div>
 <div id="results-analysis" class="section level2">
 <h2>Results Analysis</h2>
@@ -501,10 +497,10 @@ estimates.</p>
 <span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a></span>
 <span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co"># Statistical significance</span></span>
 <span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="cf">if</span> (ci_95[<span class="dv">1</span>] <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
-<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✓ Result is statistically significant at 95% confidence level</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[OK] Result is statistically significant at 95% confidence level</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  (95% CI does not include zero)</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✗ Result is NOT statistically significant at 95% confidence level</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[X] Result is NOT statistically significant at 95% confidence level</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb9-28"><a href="#cb9-28" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  (95% CI includes zero)</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb9-29"><a href="#cb9-29" tabindex="-1"></a>}</span>
 <span id="cb9-30"><a href="#cb9-30" tabindex="-1"></a></span>
@@ -514,7 +510,7 @@ estimates.</p>
 <span id="cb9-34"><a href="#cb9-34" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;95%% CI for relative lift: [%.1f%%, %.1f%%]</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb9-35"><a href="#cb9-35" tabindex="-1"></a>            <span class="fu">quantile</span>(relative_lifts, <span class="fl">0.025</span>) <span class="sc">*</span> <span class="dv">100</span>,</span>
 <span id="cb9-36"><a href="#cb9-36" tabindex="-1"></a>            <span class="fu">quantile</span>(relative_lifts, <span class="fl">0.975</span>) <span class="sc">*</span> <span class="dv">100</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Bootstrap Results (10,000 iterations) ===
 
 Observed difference: 0.70%
@@ -524,7 +520,7 @@ Observed difference: 0.70%
 
 Probability that B &gt; A: 99.7%
 
-✓ Result is statistically significant at 95% confidence level
+[OK] Result is statistically significant at 95% confidence level
   (95% CI does not include zero)
 
 Relative lift: 8.2%
@@ -560,9 +556,8 @@ Relative lift: 8.2%
 <tr class="header">
 <th>Method</th>
 <th>Iterations</th>
-<th>Time</th>
+<th>Compute time</th>
 <th>Cost</th>
-<th>Speedup</th>
 </tr>
 </thead>
 <tbody>
@@ -571,28 +566,35 @@ Relative lift: 8.2%
 <td>1,000</td>
 <td>2.1 sec</td>
 <td>$0</td>
-<td>1x</td>
 </tr>
 <tr class="even">
 <td>Local (est.)</td>
 <td>10,000</td>
 <td>21 sec</td>
 <td>$0</td>
-<td>1x</td>
 </tr>
 <tr class="odd">
 <td>staRburst</td>
 <td>10,000</td>
-<td>18 sec</td>
+<td>18 sec (compute only)</td>
 <td>$0.01</td>
-<td>6.9x</td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p><strong>Reading these numbers honestly:</strong> the staRburst row is
+<em>compute time only</em> on a warm pool and excludes the one-time
+startup (~2 minutes) and image pull. For a job that finishes in ~20
+seconds locally, that startup makes local the faster choice — the
+numbers here are illustrative, not a claim that bursting a 20-second job
+wins. Bootstrap <em>does</em> parallelize well; the payoff is real once
+iterations are expensive or you scale to 100,000+. See
+<code>vignette(&quot;performance&quot;)</code> for the sizing heuristics.</p>
+</blockquote>
 <p><strong>Key Insights</strong>: - Bootstrap is highly parallelizable -
-Fast iterations still benefit from cloud parallelization - Minimal cost
-even with 10,000 iterations - Can easily scale to 100,000+ iterations
-for more precision</p>
+Minimal per-task cost even with 10,000 iterations - The win comes at
+scale (100,000+ iterations or expensive per-iteration work), where
+startup overhead is amortized away</p>
 </div>
 <div id="advanced-multi-metric-bootstrap" class="section level2">
 <h2>Advanced: Multi-Metric Bootstrap</h2>

@@ -117,20 +117,23 @@ knitr::opts_chunk$set(
 # local_results <- lapply(head(tickers, 50), fetch_company_data_mock)
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 # 
-# cat(sprintf("✓ Completed 50 calls in %.1f seconds\n", local_time))
+# cat(sprintf("[OK] Completed 50 calls in %.1f seconds\n", local_time))
 # cat(sprintf("  Estimated time for %d: %.1f minutes\n",
 #             n_companies, local_time * n_companies / 50 / 60))
 
 ## ----cloud, eval=FALSE--------------------------------------------------------
 # cat(sprintf("Fetching data for %d companies on AWS...\n", n_companies))
 # 
+# # ~100 tasks, each fetching a chunk of tickers
+# batches <- split(tickers, ceiling(seq_along(tickers) / ceiling(length(tickers) / 100)))
 # results <- starburst_map(
-#   tickers,
-#   fetch_company_data_mock,
+#   batches,
+#   function(batch) lapply(batch, fetch_company_data_mock),
 #   workers = 25,
 #   cpu = 1,
 #   memory = "2GB"
 # )
+# results <- unlist(results, recursive = FALSE)  # flatten to 1,000 results
 
 ## ----analysis, eval=FALSE-----------------------------------------------------
 # # Convert results to data frame
@@ -191,20 +194,21 @@ knitr::opts_chunk$set(
 #             max(results_df$market_cap, na.rm = TRUE) / 1e9))
 
 ## ----rate-limiting, eval=FALSE------------------------------------------------
-# # Add jitter to respect rate limits
-# fetch_with_rate_limit <- function(ticker, rate_limit = 100) {
-#   # Add delay based on rate limit (calls per minute)
-#   delay <- 60 / rate_limit + runif(1, 0, 0.1)
+# # per_worker_rate is calls/minute allowed to THIS worker
+# fetch_with_rate_limit <- function(ticker, per_worker_rate) {
+#   delay <- 60 / per_worker_rate + runif(1, 0, 0.1)
 #   Sys.sleep(delay)
-# 
 #   fetch_company_data(ticker)
 # }
 # 
-# # Use with staRburst
+# global_limit <- 100   # API allows 100 calls/minute total
+# workers      <- 10
+# per_worker   <- global_limit / workers   # 10 calls/min each
+# 
 # results <- starburst_map(
 #   tickers,
-#   function(x) fetch_with_rate_limit(x, rate_limit = 100),
-#   workers = 10  # Adjust workers based on API rate limit
+#   function(x) fetch_with_rate_limit(x, per_worker_rate = per_worker),
+#   workers = workers
 # )
 
 ## ----error-handling, eval=FALSE-----------------------------------------------

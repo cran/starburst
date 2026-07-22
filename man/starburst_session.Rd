@@ -33,28 +33,64 @@ starburst_session(
 
 \item{absolute_timeout}{Maximum session lifetime in seconds (default: 86400)}
 
-\item{launch_type}{"FARGATE" or "EC2" (default: "FARGATE")}
+\item{launch_type}{"EC2" or "FARGATE" (default: "EC2")}
 
-\item{instance_type}{EC2 instance type for EC2 launch (default: "c6a.large")}
+\item{instance_type}{EC2 instance type for EC2 launch (default: "c7g.xlarge")}
 
-\item{use_spot}{Use spot instances for EC2 (default: FALSE)}
+\item{use_spot}{Use spot instances for EC2 (default: TRUE)}
 
 \item{warm_pool_timeout}{EC2 warm pool timeout in seconds (default: 3600)}
 }
 \value{
-A StarburstSession object with methods:
-  \itemize{
-    \item \code{submit(expr, ...)} - Submit a task to the session
-    \item \code{status()} - Get progress summary
-    \item \code{collect(wait = FALSE)} - Collect completed results
-    \item \code{extend(seconds = 3600)} - Extend timeout
-    \item \code{cleanup()} - Terminate and cleanup
+A \code{StarburstSession} object (also carrying \code{$session_id}, the
+  handle you pass to \code{\link{starburst_session_attach}}) with methods:
+  \describe{
+    \item{\code{submit(expr, globals = NULL, packages = NULL)}}{Submit one task
+      (a quoted expression). Returns the task id. Call repeatedly to fan out work.}
+    \item{\code{status()}}{Return a progress summary (counts of pending / running
+      / completed / failed tasks). Safe to call from a fresh R session after
+      reattaching.}
+    \item{\code{collect(wait = FALSE)}}{Retrieve results, keyed by task id, in
+      submission order. With \code{wait = FALSE} returns whatever has finished so
+      far; \code{wait = TRUE} blocks until every submitted task is terminal.
+      Every terminal task appears: a success carries its return value; a
+      \strong{failed} task carries a structured failure
+      \code{list(error = TRUE, message = ..., value = NULL, task_id = ...)} so
+      failures are visible rather than silently dropped.}
+    \item{\code{extend(seconds = 3600)}}{Extend the active/absolute timeout of a
+      still-running session.}
+    \item{\code{cleanup(stop_workers = TRUE, force = FALSE)}}{Stop the session's
+      workers and mark it terminated. By default \strong{S3 objects are
+      preserved} (so you can still inspect/collect); pass \code{force = TRUE} to
+      also delete the session's S3 task/result objects. Otherwise the session
+      self-terminates at \code{absolute_timeout}.}
   }
 }
 \description{
 Creates a new detached session that can run computations independently
 of your R session. You can close R and reattach later to collect results.
 }
+\section{Lifecycle}{
+
+\code{starburst_session()} launches workers immediately and returns a handle.
+Submit tasks, then either poll \code{status()}/\code{collect()} in the same
+session, or record \code{session$session_id}, close R, and later
+\code{\link{starburst_session_attach}(session_id)} to reconnect and collect.
+A session ends when you call \code{cleanup()}, when \code{session_timeout}
+elapses with no activity, or at \code{absolute_timeout} — whichever comes first.
+}
+
+\section{Failure behavior}{
+
+A failed task is recorded (surfaced via \code{status()}) and does not abort the
+others; \code{collect()} returns it as a structured failure entry
+(\code{error = TRUE} with a \code{message}) alongside the successful results,
+rather than dropping it or raising. If the client
+dies, workers keep running against S3 until a timeout, which is what makes
+reattaching possible. \code{cleanup()} is the only thing that frees resources
+early — sessions do not auto-clean on garbage collection.
+}
+
 \examples{
 \donttest{
 if (starburst_is_configured()) {
@@ -76,4 +112,9 @@ if (starburst_is_configured()) {
   results <- session$collect(wait = TRUE)
 }
 }
+}
+\seealso{
+\code{\link{starburst_session_attach}},
+  \code{\link{starburst_list_sessions}}; \code{\link{starburst_map}} for
+  ephemeral (non-detached) fan-out.
 }

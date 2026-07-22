@@ -108,6 +108,7 @@ test_that("session state functions work correctly", {
 })
 
 test_that("detached session creation works", {
+  skip_if_no_integration()  # launches real Fargate workers
   skip_on_cran()
   skip_if_not(check_aws_credentials(), "AWS credentials not available")
 
@@ -128,6 +129,7 @@ test_that("detached session creation works", {
 })
 
 test_that("session submit and collect workflow", {
+  skip_if_no_integration()  # launches real Fargate workers
   skip_on_cran()
   skip_if_not(check_aws_credentials(), "AWS credentials not available")
 
@@ -156,6 +158,7 @@ test_that("session submit and collect workflow", {
 })
 
 test_that("session attach workflow", {
+  skip_if_no_integration()  # launches real Fargate workers
   skip_on_cran()
   skip_if_not(check_aws_credentials(), "AWS credentials not available")
 
@@ -231,4 +234,70 @@ test_that("plan guard prevents detached mode misuse", {
     ),
     "Detached mode cannot be used with plan"
   )
+})
+
+test_that("collect(wait=TRUE) returns when user tasks finish despite live bootstrap tasks", {
+  # Regression for #38: the all_completed check must ignore bootstrap-* tasks,
+  # which stay "claimed"/"running" for the session's life. Otherwise wait=TRUE
+  # hangs until timeout even though every real result has landed in S3.
+  skip_if_not_installed("mockery")
+
+  statuses <- list(
+    "bootstrap-session-x-1" = list(state = "claimed"),
+    "bootstrap-session-x-2" = list(state = "running"),
+    "task-aaa" = list(state = "completed"),
+    "task-bbb" = list(state = "completed")
+  )
+
+  mockery::stub(collect_session_results, "list_task_statuses", function(...) statuses)
+  mockery::stub(collect_session_results, "get_s3_client", function(...) {
+    list(download_file = function(Bucket, Key, Filename) {
+      qs2::qs_save(list(error = FALSE, value = 42), Filename)
+    })
+  })
+
+  session <- list(backend = list(session_id = "session-x", region = "us-east-1",
+                                 bucket = "b"))
+
+  # Must return quickly (well under the timeout) with both user results, not hang.
+  start <- Sys.time()
+  res <- collect_session_results(session, wait = TRUE, timeout = 30)
+  elapsed <- as.numeric(difftime(Sys.time(), start, units = "secs"))
+
+  expect_named(res, c("task-aaa", "task-bbb"), ignore.order = TRUE)
+  expect_lt(elapsed, 10)  # returned promptly, did not spin to timeout
+})
+
+test_that("collect() returns a structured failure entry for failed tasks", {
+  # Regression for the 4th-review finding: collect() must NOT silently drop
+  # failed tasks. Every terminal task appears; failures carry error=TRUE.
+  skip_if_not_installed("mockery")
+
+  statuses <- list(
+    "bootstrap-session-x-1" = list(state = "claimed"),
+    "task-ok"   = list(state = "completed"),
+    "task-fail" = list(state = "failed", error = "boom")
+  )
+  mockery::stub(collect_session_results, "list_task_statuses", function(...) statuses)
+  # S3 has the success blob but NOT the failed one -> exercises the synthesize path.
+  mockery::stub(collect_session_results, "get_s3_client", function(...) {
+    list(download_file = function(Bucket, Key, Filename) {
+      if (grepl("task-ok", Key)) {
+        qs2::qs_save(list(error = FALSE, value = 21), Filename)
+      } else {
+        stop("NoSuchKey")   # failed task's blob missing
+      }
+    })
+  })
+
+  session <- list(backend = list(session_id = "session-x", region = "us-east-1",
+                                 bucket = "b"))
+  res <- collect_session_results(session, wait = TRUE, timeout = 30)
+
+  expect_setequal(names(res), c("task-ok", "task-fail"))
+  expect_false(isTRUE(res[["task-ok"]]$error))
+  expect_equal(res[["task-ok"]]$value, 21)
+  # failed task present as a structured failure, synthesized from status$error
+  expect_true(isTRUE(res[["task-fail"]]$error))
+  expect_match(res[["task-fail"]]$message, "boom")
 })

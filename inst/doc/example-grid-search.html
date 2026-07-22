@@ -519,14 +519,14 @@ combination:</p>
 <span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a></span>
 <span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;mins&quot;</span>))</span>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a></span>
-<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Average time per combination: %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a>            local_time <span class="sc">*</span> <span class="dv">60</span> <span class="sc">/</span> <span class="fu">nrow</span>(sample_params)))</span>
 <span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for full grid (%d combinations): %.1f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>            <span class="fu">nrow</span>(param_grid), local_time <span class="sc">*</span> <span class="fu">nrow</span>(param_grid) <span class="sc">/</span> <span class="fu">nrow</span>(sample_params)))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Running local benchmark (10 parameter combinations)...
-✓ Completed in 4.2 minutes
+[OK] Completed in 4.2 minutes
   Average time per combination: 25.2 seconds
   Estimated time for full grid (81 combinations): 34.0 minutes</code></pre>
 <p>For full grid search locally: <strong>~34 minutes</strong></p>
@@ -534,35 +534,45 @@ combination:</p>
 <div id="cloud-execution-with-starburst" class="section level2">
 <h2>Cloud Execution with staRburst</h2>
 <p>Run the complete grid search in parallel on AWS:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>n_workers <span class="ot">&lt;-</span> <span class="dv">27</span>  <span class="co"># Process ~3 parameter combinations per worker</span></span>
+<p>Each <code>cv_evaluate</code> is short, so submitting 81
+one-combination tasks would be dominated by per-task S3 overhead (see
+the <a href="https://starburst.ing/articles/workload-shapes.html">Workload
+Shapes</a> guide). Instead, batch the combinations into at most ~100
+tasks and have each task evaluate its chunk (this small 81-cell grid
+stays near one combination per task, but the same pattern keeps larger
+grids from over-submitting):</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>n_workers <span class="ot">&lt;-</span> <span class="dv">27</span></span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a></span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Running grid search (%d combinations) on %d workers...</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>            <span class="fu">nrow</span>(param_grid), n_workers))</span>
 <span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a></span>
 <span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>cloud_start <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
 <span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a></span>
-<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
-<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>  <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(param_grid),</span>
-<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>  <span class="cf">function</span>(i) <span class="fu">cv_evaluate</span>(param_grid[i, ], X_train, y_train, <span class="at">n_folds =</span> <span class="dv">5</span>),</span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>  <span class="at">workers =</span> n_workers,</span>
-<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">2</span>,</span>
-<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;4GB&quot;</span></span>
-<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a>)</span>
-<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a></span>
-<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;mins&quot;</span>))</span>
-<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a></span>
-<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✓ Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 27 workers
-💰 Estimated cost: ~$2.16/hour
-📊 Processing 81 items with 27 workers
-📦 Created 27 chunks (avg 3 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 27 tasks
-⏳ Progress: 27/27 tasks (1.4 minutes elapsed)
-
-✓ Completed in 1.4 minutes
-💰 Actual cost: $0.05</code></pre>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co"># Batch the parameter rows into ~100 tasks, each evaluating a chunk</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>idx <span class="ot">&lt;-</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(param_grid)</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>batches <span class="ot">&lt;-</span> <span class="fu">split</span>(idx, <span class="fu">ceiling</span>(<span class="fu">seq_along</span>(idx) <span class="sc">/</span> <span class="fu">ceiling</span>(<span class="fu">length</span>(idx) <span class="sc">/</span> <span class="dv">100</span>)))</span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>  batches,</span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>  <span class="cf">function</span>(chunk) <span class="fu">lapply</span>(chunk, <span class="cf">function</span>(i) {</span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a>    <span class="fu">cv_evaluate</span>(param_grid[i, ], X_train, y_train, <span class="at">n_folds =</span> <span class="dv">5</span>)</span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a>  }),</span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a>  <span class="at">workers =</span> n_workers,</span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">2</span>,</span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;4GB&quot;</span></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a>)</span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">unlist</span>(results, <span class="at">recursive =</span> <span class="cn">FALSE</span>)  <span class="co"># flatten to one result per combination</span></span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;mins&quot;</span>))</span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[OK] Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span></code></pre></div>
+<p><strong>Illustrative output</strong> (times/cost vary — see the
+Workload Shapes and Performance guides for measured numbers):</p>
+<pre><code>[Starting] Starting starburst cluster with 27 workers
+[Status] Processing 81 items with 27 workers
+[Starting] Submitting 81 tasks...
+[Wait] Progress: 81/81
+[OK] Completed
+[Cost] Estimated cost: (printed per run)</code></pre>
 </div>
 <div id="results-analysis" class="section level2">
 <h2>Results Analysis</h2>
@@ -634,7 +644,7 @@ combination:</p>
 <span id="cb11-65"><a href="#cb11-65" tabindex="-1"></a>          <span class="at">ylab =</span> <span class="st">&quot;CV Score&quot;</span>,</span>
 <span id="cb11-66"><a href="#cb11-66" tabindex="-1"></a>          <span class="at">col =</span> <span class="st">&quot;lightgreen&quot;</span>)</span>
 <span id="cb11-67"><a href="#cb11-67" tabindex="-1"></a>}</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Grid Search Results ===
 
 Total combinations evaluated: 81
@@ -685,46 +695,11 @@ min_child_weight:
   3: 0.7689
   5: 0.7576</code></pre>
 </div>
-<div id="performance-comparison" class="section level2">
-<h2>Performance Comparison</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Method</th>
-<th>Combinations</th>
-<th>Time</th>
-<th>Cost</th>
-<th>Speedup</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Local</td>
-<td>10</td>
-<td>4.2 min</td>
-<td>$0</td>
-<td>-</td>
-</tr>
-<tr class="even">
-<td>Local (est.)</td>
-<td>81</td>
-<td>34 min</td>
-<td>$0</td>
-<td>1x</td>
-</tr>
-<tr class="odd">
-<td>staRburst</td>
-<td>81</td>
-<td>1.4 min</td>
-<td>$0.05</td>
-<td>24.3x</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Key Insights</strong>: - Excellent speedup (24x) for grid
-search - Cost remains minimal ($0.05) despite massive parallelization -
-Can evaluate 81 combinations in the time it takes to run ~3 locally -
-Enables exploration of much larger parameter spaces</p>
+<div id="performance" class="section level2">
+<h2>Performance</h2>
+<p>For measured performance and when bursting is worth it, see
+<code>vignette(&quot;performance&quot;)</code> and
+<code>vignette(&quot;workload-shapes&quot;)</code>.</p>
 </div>
 <div id="advanced-random-search" class="section level2">
 <h2>Advanced: Random Search</h2>

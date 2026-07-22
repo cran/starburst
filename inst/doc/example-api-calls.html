@@ -482,37 +482,41 @@ that simulates API behavior:</p>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>local_results <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">head</span>(tickers, <span class="dv">50</span>), fetch_company_data_mock)</span>
 <span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a></span>
-<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed 50 calls in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed 50 calls in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for %d: %.1f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>            n_companies, local_time <span class="sc">*</span> n_companies <span class="sc">/</span> <span class="dv">50</span> <span class="sc">/</span> <span class="dv">60</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Fetching data for 1000 companies locally...
-✓ Completed 50 calls in 24.3 seconds
+[OK] Completed 50 calls in 24.3 seconds
   Estimated time for 1000: 8.1 minutes</code></pre>
 </div>
 <div id="cloud-execution-with-starburst" class="section level2">
 <h2>Cloud Execution with staRburst</h2>
 <p>Run all 1,000 API calls in parallel:</p>
+<p>Each fetch is short, so submitting 1,000 one-call tasks would be
+dominated by per-task S3 overhead (see the <a href="https://starburst.ing/articles/workload-shapes.html">Workload
+Shapes</a> guide). Instead, batch the tickers into ~100 tasks and have
+each task fetch its chunk:</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Fetching data for %d companies on AWS...</span><span class="sc">\n</span><span class="st">&quot;</span>, n_companies))</span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a></span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  tickers,</span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  fetch_company_data_mock,</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">25</span>,</span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">1</span>,</span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;2GB&quot;</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 25 workers
-💰 Estimated cost: ~$1.00/hour
-📊 Processing 1000 items with 25 workers
-📦 Created 25 chunks (avg 40 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 25 tasks
-⏳ Progress: 25/25 tasks (0.8 minutes elapsed)
-
-✓ Completed in 0.8 minutes
-💰 Actual cost: $0.01</code></pre>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co"># ~100 tasks, each fetching a chunk of tickers</span></span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>batches <span class="ot">&lt;-</span> <span class="fu">split</span>(tickers, <span class="fu">ceiling</span>(<span class="fu">seq_along</span>(tickers) <span class="sc">/</span> <span class="fu">ceiling</span>(<span class="fu">length</span>(tickers) <span class="sc">/</span> <span class="dv">100</span>)))</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  batches,</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="cf">function</span>(batch) <span class="fu">lapply</span>(batch, fetch_company_data_mock),</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">25</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">1</span>,</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;2GB&quot;</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>)</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">unlist</span>(results, <span class="at">recursive =</span> <span class="cn">FALSE</span>)  <span class="co"># flatten to 1,000 results</span></span></code></pre></div>
+<p><strong>Illustrative output</strong> (times/cost vary — see the
+Workload Shapes and Performance guides for measured numbers):</p>
+<pre><code>[Starting] Starting starburst cluster with 25 workers
+[Status] Processing 100 items with 25 workers
+[Starting] Submitting 100 tasks...
+[Wait] Progress: 100/100
+[OK] Completed
+[Cost] Estimated cost: (printed per run)</code></pre>
 </div>
 <div id="results-processing" class="section level2">
 <h2>Results Processing</h2>
@@ -574,75 +578,41 @@ that simulates API behavior:</p>
 <span id="cb9-55"><a href="#cb9-55" tabindex="-1"></a>            <span class="fu">min</span>(results_df<span class="sc">$</span>market_cap, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">/</span> <span class="fl">1e9</span>,</span>
 <span id="cb9-56"><a href="#cb9-56" tabindex="-1"></a>            <span class="fu">max</span>(results_df<span class="sc">$</span>market_cap, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">/</span> <span class="fl">1e9</span>))</span></code></pre></div>
 </div>
-<div id="performance-comparison" class="section level2">
-<h2>Performance Comparison</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Method</th>
-<th>Workers</th>
-<th>Time</th>
-<th>Cost</th>
-<th>Speedup</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Local</td>
-<td>1</td>
-<td>8.1 min</td>
-<td>$0</td>
-<td>1x</td>
-</tr>
-<tr class="even">
-<td>staRburst</td>
-<td>10</td>
-<td>2.1 min</td>
-<td>$0.004</td>
-<td>3.9x</td>
-</tr>
-<tr class="odd">
-<td>staRburst</td>
-<td>25</td>
-<td>0.8 min</td>
-<td>$0.01</td>
-<td>10.1x</td>
-</tr>
-<tr class="even">
-<td>staRburst</td>
-<td>50</td>
-<td>0.5 min</td>
-<td>$0.02</td>
-<td>16.2x</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Key Insights</strong>: - Excellent scaling for I/O-bound
-workloads - Cost remains minimal even with 50 workers - Network latency
-dominates computation time - Automatic retries handle transient
-failures</p>
+<div id="performance" class="section level2">
+<h2>Performance</h2>
+<p>For measured performance and when bursting is worth it, see
+<code>vignette(&quot;performance&quot;)</code> and
+<code>vignette(&quot;workload-shapes&quot;)</code>.</p>
 </div>
 <div id="rate-limiting-considerations" class="section level2">
 <h2>Rate Limiting Considerations</h2>
 <p>When working with real APIs:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Add jitter to respect rate limits</span></span>
-<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>fetch_with_rate_limit <span class="ot">&lt;-</span> <span class="cf">function</span>(ticker, <span class="at">rate_limit =</span> <span class="dv">100</span>) {</span>
-<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="co"># Add delay based on rate limit (calls per minute)</span></span>
-<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  delay <span class="ot">&lt;-</span> <span class="dv">60</span> <span class="sc">/</span> rate_limit <span class="sc">+</span> <span class="fu">runif</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fl">0.1</span>)</span>
-<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="fu">Sys.sleep</span>(delay)</span>
-<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a></span>
-<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="fu">fetch_company_data</span>(ticker)</span>
-<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>}</span>
-<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a></span>
-<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co"># Use with staRburst</span></span>
-<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
-<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>  tickers,</span>
-<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>  <span class="cf">function</span>(x) <span class="fu">fetch_with_rate_limit</span>(x, <span class="at">rate_limit =</span> <span class="dv">100</span>),</span>
-<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">10</span>  <span class="co"># Adjust workers based on API rate limit</span></span>
-<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a>)</span></code></pre></div>
+<p>Each worker throttles itself <strong>independently</strong>, so the
+<em>aggregate</em> rate is the per-worker rate times the number of
+workers. To respect a global API limit, give each worker its share:
+<code>per_worker_rate = global_limit / workers</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># per_worker_rate is calls/minute allowed to THIS worker</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>fetch_with_rate_limit <span class="ot">&lt;-</span> <span class="cf">function</span>(ticker, per_worker_rate) {</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  delay <span class="ot">&lt;-</span> <span class="dv">60</span> <span class="sc">/</span> per_worker_rate <span class="sc">+</span> <span class="fu">runif</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fl">0.1</span>)</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="fu">Sys.sleep</span>(delay)</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="fu">fetch_company_data</span>(ticker)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>}</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>global_limit <span class="ot">&lt;-</span> <span class="dv">100</span>   <span class="co"># API allows 100 calls/minute total</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a>workers      <span class="ot">&lt;-</span> <span class="dv">10</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a>per_worker   <span class="ot">&lt;-</span> global_limit <span class="sc">/</span> workers   <span class="co"># 10 calls/min each</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a>  tickers,</span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a>  <span class="cf">function</span>(x) <span class="fu">fetch_with_rate_limit</span>(x, <span class="at">per_worker_rate =</span> per_worker),</span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a>  <span class="at">workers =</span> workers</span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a>)</span></code></pre></div>
 <p><strong>Rate limit calculation</strong>: - API limit: 100
-calls/minute - Workers: 10 - Max throughput: 1000 calls/minute (10
-workers × 100 calls/min) - Adjust workers to stay under limit</p>
+calls/minute (global) - Workers: 10 → each worker allowed 100 / 10 = 10
+calls/minute - Aggregate throughput: 10 workers × 10 calls/min =
+<strong>100 calls/minute</strong> (at the limit) - Rule:
+<code>per_worker_rate = global_limit / workers</code> keeps the fleet
+under the cap</p>
 </div>
 <div id="error-handling-best-practices" class="section level2">
 <h2>Error Handling Best Practices</h2>

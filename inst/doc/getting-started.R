@@ -7,16 +7,15 @@ knitr::opts_chunk$set(
 
 ## -----------------------------------------------------------------------------
 # # Install from GitHub
-# remotes::install_github("yourname/starburst")
+# remotes::install_github("scttfrdmn/starburst")
 
 ## -----------------------------------------------------------------------------
 # library(starburst)
 # 
-# # Interactive setup wizard (takes ~2 minutes)
+# # Interactive setup wizard
 # starburst_setup()
 
 ## -----------------------------------------------------------------------------
-# library(furrr)
 # library(starburst)
 # 
 # # Define your work
@@ -29,127 +28,56 @@ knitr::opts_chunk$set(
 #   mean(results)
 # }
 # 
-# # Local execution (single core)
+# # Run across 50 cloud workers (EC2 by default)
+# results <- starburst_map(1:100, expensive_simulation, workers = 50)
+# #> [Starting] Starting starburst cluster with 50 workers
+# #> [Status] Processing 100 items with 50 workers
+# #> [Starting] Submitting 100 tasks...
+# #> [Wait] Progress: 100/100 (128.0s)
+# #> [OK] Completed in 128.0 seconds
+# #> [Cost] Estimated cost: $0.85
+
+## -----------------------------------------------------------------------------
+# library(furrr)
+# library(starburst)
+# 
+# # Local baseline
 # plan(sequential)
-# system.time({
-#   results_local <- future_map(1:100, expensive_simulation)
-# })
-# #> ~16 minutes on typical laptop
+# results_local <- future_map(1:100, expensive_simulation)
 # 
-# # Cloud execution (50 workers)
-# plan(future_starburst, workers = 50)
-# system.time({
-#   results_cloud <- future_map(1:100, expensive_simulation)
-# })
-# #> ~2 minutes (including 45s startup)
-# #> Cost: ~$0.85
+# # Same code, now on 50 cloud workers — just change the plan
+# plan(starburst, workers = 50)
+# results_cloud <- future_map(1:100, expensive_simulation)
 # 
-# # Results are identical
+# # Results are identical to the local run
 # identical(results_local, results_cloud)
 # #> [1] TRUE
 
 ## -----------------------------------------------------------------------------
-# library(starburst)
-# library(furrr)
+# # Direct API
+# results <- starburst_map(1:100, expensive_simulation, workers = 50)
 # 
-# # Simulate portfolio returns
-# simulate_portfolio <- function(seed) {
-#   set.seed(seed)
-# 
-#   # Random walk for 252 trading days
-#   returns <- rnorm(252, mean = 0.0003, sd = 0.02)
-#   prices <- cumprod(1 + returns)
-# 
-#   list(
-#     final_value = prices[252],
-#     max_drawdown = max(cummax(prices) - prices) / max(prices),
-#     sharpe_ratio = mean(returns) / sd(returns) * sqrt(252)
-#   )
-# }
-# 
-# # Run 10,000 simulations on 100 workers
-# plan(future_starburst, workers = 100)
-# 
-# results <- future_map(1:10000, simulate_portfolio, .options = furrr_options(seed = TRUE))
-# 
-# # Analyze results
-# final_values <- sapply(results, `[[`, "final_value")
-# hist(final_values, breaks = 50, main = "Distribution of Portfolio Final Values")
-# 
-# # 95% confidence interval
-# quantile(final_values, c(0.025, 0.975))
+# # future / furrr
+# plan(starburst, workers = 50)
+# results <- future_map(1:100, expensive_simulation)
 
 ## -----------------------------------------------------------------------------
-# library(starburst)
-# library(furrr)
-# 
-# # Your data
-# data <- read.csv("my_data.csv")
-# 
-# # Bootstrap function
-# bootstrap_regression <- function(i, data) {
-#   # Resample with replacement
-#   boot_indices <- sample(nrow(data), replace = TRUE)
-#   boot_data <- data[boot_indices, ]
-# 
-#   # Fit model
-#   model <- lm(y ~ x1 + x2 + x3, data = boot_data)
-# 
-#   # Return coefficients
-#   coef(model)
+# # Download an s3://bucket/key object to a temp file and read it on the worker.
+# read_s3 <- function(s3_uri, reader = readRDS) {
+#   m <- regmatches(s3_uri, regexec("^s3://([^/]+)/(.+)$", s3_uri))[[1]]
+#   bucket <- m[2]; key <- m[3]
+#   tmp <- tempfile()
+#   obj <- paws.storage::s3()$get_object(Bucket = bucket, Key = key)
+#   writeBin(obj$Body, tmp)
+#   reader(tmp)
 # }
-# 
-# # Run 10,000 bootstrap samples
-# plan(future_starburst, workers = 50)
-# 
-# boot_results <- future_map(1:10000, bootstrap_regression, data = data)
-# 
-# # Convert to matrix
-# boot_coefs <- do.call(rbind, boot_results)
-# 
-# # 95% confidence intervals for each coefficient
-# apply(boot_coefs, 2, quantile, probs = c(0.025, 0.975))
 
 ## -----------------------------------------------------------------------------
-# library(starburst)
-# library(furrr)
-# 
-# # Process one sample
-# process_sample <- function(sample_id) {
-#   # Read from S3 (data already in cloud)
-#   fastq_path <- sprintf("s3://my-genomics-data/samples/%s.fastq", sample_id)
-#   data <- read_fastq(fastq_path)
-# 
-#   # Align reads
-#   aligned <- align_reads(data, reference = "hg38")
-# 
-#   # Call variants
-#   variants <- call_variants(aligned)
-# 
-#   # Return summary
-#   list(
-#     sample_id = sample_id,
-#     num_variants = nrow(variants),
-#     variants = variants
-#   )
-# }
-# 
-# # Process 1000 samples on 100 workers
-# sample_ids <- list.files("s3://my-genomics-data/samples/", pattern = ".fastq$")
-# 
-# plan(future_starburst, workers = 100)
-# 
-# results <- future_map(sample_ids, process_sample, .progress = TRUE)
-# 
-# # Combine results
-# all_variants <- do.call(rbind, lapply(results, `[[`, "variants"))
-
-## -----------------------------------------------------------------------------
-# plan(future_starburst, workers = 50)
+# plan(starburst, workers = 50)
 # 
 # results <- future_map(file_list, function(file) {
-#   # Workers read directly from S3
-#   data <- read.csv(sprintf("s3://my-bucket/%s", file))
+#   # Each worker pulls its file from S3 (read_s3 defined above)
+#   data <- read_s3(sprintf("s3://my-bucket/%s", file), reader = read.csv)
 #   process(data)
 # })
 
@@ -158,50 +86,54 @@ knitr::opts_chunk$set(
 # data <- read.csv("local_file.csv")
 # 
 # # staRburst automatically uploads to S3 and distributes
-# plan(future_starburst, workers = 50)
+# plan(starburst, workers = 50)
 # 
-# results <- future_map(1:1000, function(i) {
+# # `replicates` is your vector of inputs (e.g. bootstrap replicate ids)
+# results <- future_map(replicates, function(i) {
 #   # Each worker gets a copy of 'data'
 #   bootstrap_analysis(data, i)
 # })
 
 ## -----------------------------------------------------------------------------
-# # Upload once
-# large_data <- read.csv("huge_file.csv")
-# s3_path <- starburst_upload(large_data, "s3://my-bucket/large_data.rds")
+# # Upload once from your machine
+# paws.storage::s3()$put_object(
+#   Bucket = "my-bucket", Key = "large_data.rds",
+#   Body = "huge_file.rds"
+# )
+# s3_path <- "s3://my-bucket/large_data.rds"
 # 
-# # Workers read from S3
-# plan(future_starburst, workers = 100)
+# # Workers read from S3 inside the task (read_s3 helper defined above)
+# plan(starburst, workers = 100)
 # 
-# results <- future_map(1:1000, function(i) {
-#   # Read from S3 inside worker
-#   data <- readRDS(s3_path)
+# # `tasks` is your vector of work items
+# results <- future_map(tasks, function(i) {
+#   data <- read_s3(s3_path)   # readRDS by default
 #   process(data, i)
 # })
 
 ## -----------------------------------------------------------------------------
 # # Check cost before running
-# plan(future_starburst, workers = 100, cpu = 4, memory = "8GB")
+# plan(starburst, workers = 100, cpu = 4, memory = "8GB")
 # #> Estimated cost: ~$3.50/hour
 
 ## -----------------------------------------------------------------------------
-# # Set maximum cost per job
+# # Set an hourly cost ceiling (USD/hour) — jobs above this rate won't start
 # starburst_config(
-#   max_cost_per_job = 10,      # Don't start jobs that would cost >$10
-#   cost_alert_threshold = 5     # Warn when approaching $5
+#   max_hourly_cost = 10,       # Don't start jobs estimated over $10/hour
+#   cost_alert_threshold = 5     # Warn at $5/hour
 # )
 # 
 # # Now jobs exceeding limit will error before starting
-# plan(future_starburst, workers = 1000)  # Would cost ~$35/hour
+# plan(starburst, workers = 1000)  # Would cost ~$35/hour
 # #> Error: Estimated cost ($35/hr) exceeds limit ($10/hr)
 
 ## -----------------------------------------------------------------------------
-# plan(future_starburst, workers = 50)
+# plan(starburst, workers = 50)
 # 
 # results <- future_map(data, process)
 # 
-# #> Cluster runtime: 23 minutes
-# #> Total cost: $1.34
+# #> Cluster runtime: ~23 minutes
+# #> Estimated cost: ~$1.34
 
 ## -----------------------------------------------------------------------------
 # starburst_quota_status()
@@ -216,30 +148,30 @@ knitr::opts_chunk$set(
 # #>   Current: 100 vCPUs
 # #>   Requested: 500 vCPUs
 # #>
-# #> ✓ Quota increase requested (Case ID: 12345678)
-# #> ✓ AWS typically approves within 1-24 hours
+# #> [OK] Quota increase requested (Case ID: 12345678)
+# #> [OK] AWS typically approves within 1-24 hours
 
 ## -----------------------------------------------------------------------------
 # # Quota allows 25 workers, but you request 100
-# plan(future_starburst, workers = 100, cpu = 4)
+# plan(starburst, workers = 100, cpu = 4)
 # 
-# #> ⚠ Requested: 100 workers (400 vCPUs)
-# #> ⚠ Current quota: 100 vCPUs (allows 25 workers max)
+# #> [!] Requested: 100 workers (400 vCPUs)
+# #> [!] Current quota: 100 vCPUs (allows 25 workers max)
 # #>
-# #> 📋 Execution plan:
-# #>   • Running in 4 waves of 25 workers each
+# #> [Plan] Execution plan:
+# #>   - Running in 4 waves of 25 workers each
 # #>
-# #> 💡 Request quota increase to 500 vCPUs? [y/n]: y
+# #> [TIP] Request quota increase to 500 vCPUs? [y/n]: y
 # #>
-# #> ✓ Quota increase requested
-# #> ⚡ Starting wave 1 (25 workers)...
+# #> [OK] Quota increase requested
+# #> [Starting] Starting wave 1 (25 workers)...
 # 
-# results <- future_map(1:1000, expensive_function)
+# results <- future_map(inputs, expensive_function)
 # 
-# #> ⚡ Wave 1: 100% complete (250 tasks)
-# #> ⚡ Wave 2: 100% complete (500 tasks)
-# #> ⚡ Wave 3: 100% complete (750 tasks)
-# #> ⚡ Wave 4: 100% complete (1000 tasks)
+# #> [Wave] Wave 1: 100% complete (250 tasks)
+# #> [Wave] Wave 2: 100% complete (500 tasks)
+# #> [Wave] Wave 3: 100% complete (750 tasks)
+# #> [Wave] Wave 4: 100% complete (1000 tasks)
 
 ## -----------------------------------------------------------------------------
 # # View logs from most recent cluster
@@ -266,7 +198,7 @@ knitr::opts_chunk$set(
 # starburst_logs(task_id = "failed-task-id")
 # 
 # # Often due to memory limits - increase worker memory
-# plan(future_starburst, workers = 50, memory = "16GB")  # Default is 8GB
+# plan(starburst, workers = 50, memory = "16GB")  # Default is 8GB
 
 ## -----------------------------------------------------------------------------
 # # Use Arrow for data frames
@@ -308,18 +240,18 @@ knitr::opts_chunk$set(
 
 ## -----------------------------------------------------------------------------
 # # Upload once to S3
-# s3_path <- "s3://bucket/big_data.csv"
-# write.csv(big_data, s3_path)
+# tmp <- tempfile(fileext = ".csv"); write.csv(big_data, tmp, row.names = FALSE)
+# paws.storage::s3()$put_object(Bucket = "bucket", Key = "big_data.csv", Body = tmp)
 # 
-# # Workers read from S3
-# results <- future_map(1:1000, function(i) {
-#   data <- read.csv(s3_path)
+# # Workers read from S3 (read_s3 helper from "Working with Data" above)
+# results <- future_map(tasks, function(i) {
+#   data <- read_s3("s3://bucket/big_data.csv", reader = read.csv)
 #   process(data, i)
 # })
 
 ## -----------------------------------------------------------------------------
 # starburst_config(
-#   max_cost_per_job = 50,           # Prevent accidents
+#   max_hourly_cost = 50,            # Cap the hourly rate (USD/hour)
 #   cost_alert_threshold = 25        # Get warned early
 # )
 
@@ -330,16 +262,16 @@ knitr::opts_chunk$set(
 
 ## -----------------------------------------------------------------------------
 # # High CPU, low memory (CPU-bound work)
-# plan(future_starburst, workers = 50, cpu = 8, memory = "16GB")
+# plan(starburst, workers = 50, cpu = 8, memory = "16GB")
 # 
 # # Low CPU, high memory (memory-bound work)
-# plan(future_starburst, workers = 25, cpu = 4, memory = "32GB")
+# plan(starburst, workers = 25, cpu = 4, memory = "32GB")
 
 ## -----------------------------------------------------------------------------
 # # Increase timeout for long-running tasks (default 1 hour)
-# plan(future_starburst, workers = 10, timeout = 7200)  # 2 hours
+# plan(starburst, workers = 10, timeout = 7200)  # 2 hours
 
 ## -----------------------------------------------------------------------------
 # # Use specific region (default from config)
-# plan(future_starburst, workers = 50, region = "us-west-2")
+# plan(starburst, workers = 50, region = "us-west-2")
 

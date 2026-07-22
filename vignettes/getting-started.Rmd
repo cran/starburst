@@ -19,11 +19,83 @@ knitr::opts_chunk$set(
 
 staRburst makes it trivial to scale your parallel R code from your laptop to 100+ AWS workers. This vignette walks through setup and common usage patterns.
 
+## Which API should I use?
+
+staRburst offers a few entry points. They share the same engine — pick the one that
+fits how your code is written:
+
+| Need | Use |
+|------|-----|
+| Map a function over inputs (simplest) | `starburst_map()` |
+| Existing `future` / `furrr` code | `plan(starburst)` then `future_map()` |
+| Long-running job that survives disconnects | `starburst_session()` |
+| Explicit, reusable worker cluster | `starburst_cluster()` |
+| Configure account/backend defaults | `starburst_config()` |
+
+If you're new, start with `starburst_map()` — the next section walks through a
+first job with it. If you already have `future`/`furrr` code, skip to
+[Migrating existing future / furrr code](#migrating-existing-future-furrr-code);
+the two styles are equivalent and shown side by side there.
+
+### Which backend? EC2 (default) vs Fargate
+
+Every API above runs on one of two compute backends, chosen with `launch_type`:
+
+- **EC2 — the default and recommended choice.** Faster (no cold start), cheaper with
+  Spot (the default), and more flexible (any instance type, warm pools).
+  `starburst_setup()` provisions its capacity provider for you, so it works out of
+  the box.
+- **Fargate — an optional serverless alternative** (`launch_type = "FARGATE"`).
+  Fully managed and needs **no** `starburst_setup_ec2` / capacity provider, but has
+  cold-start latency and is bounded by your account's Fargate vCPU quota. Reach for
+  it if you specifically want task-based serverless execution.
+
+You don't have to choose up front — leave the default (EC2) and add
+`launch_type = "FARGATE"` later if you want to compare.
+
+## How it works (the mental model)
+
+```
+        Local R session
+              |
+              |  (1) serialize your function + inputs + detected globals (qs2)
+              |      AWS credentials are read HERE, from your local environment
+              v
+   S3 bucket  +  staRburst control plane (ECS/ECR)
+              |
+              |  (2) launch workers: EC2 (default, Spot) or Fargate
+              |      each worker's R packages come from your renv.lock, baked
+              |      into a Docker image cached in ECR
+              v
+   Remote R workers  (one task per input element)
+              |
+              |  (3) each worker pulls a task from S3, runs it, writes the
+              |      result + logs back to S3
+              v
+   Local R session  <-- results collected in order (starburst_map / cluster)
+        or
+   Detached-session store in S3  <-- collected later via starburst_session_attach()
+```
+
+**What to know from this picture:**
+
+- **Credentials** are used only on your machine (to call AWS) and by the workers'
+  IAM role — you never put keys in your code or in S3.
+- **Uploaded** per task: your function, its inputs, and auto-detected globals — not
+  your whole workspace. Large data should go to S3 yourself and be read on the worker.
+- **Dependencies** come from your `renv.lock`, installed into the worker image once
+  and cached in ECR (this is the first-run build cost).
+- **After a failure or disconnect**, workers keep running against S3 until a
+  timeout; nothing is silently lost. `session$cleanup()` (or normal completion of
+  `starburst_map()`) tears down workers and removes the job's S3 objects.
+- **Detached sessions** differ only in step 3's return path: results persist in S3
+  so you can close R and collect later, instead of blocking the local session.
+
 ## Installation
 
 ```{r}
 # Install from GitHub
-remotes::install_github("yourname/starburst")
+remotes::install_github("scttfrdmn/starburst")
 ```
 
 ## One-Time Setup
@@ -33,7 +105,7 @@ Before using staRburst, you need to configure AWS resources. This only needs to 
 ```{r}
 library(starburst)
 
-# Interactive setup wizard (takes ~2 minutes)
+# Interactive setup wizard
 starburst_setup()
 ```
 
@@ -41,15 +113,25 @@ This will:
 - Validate your AWS credentials
 - Create an S3 bucket for data transfer
 - Create an ECR repository for Docker images
-- Set up ECS cluster and VPC resources
+- Set up an ECS cluster and VPC resources
+- Provision the **default EC2 capacity** (launch template + Auto Scaling Group +
+  capacity provider for `c7g.xlarge`) so the default EC2 backend works immediately
+  — created at zero instances, so no compute cost until you run a job
+  (skip with `setup_ec2 = FALSE` if you only use Fargate)
 - Check Fargate quotas and offer to request increases
+- Build the initial worker image
 
-## Basic Usage
+Provisioning the AWS resources takes about **2 minutes**. On the **first run**,
+staRburst also builds the worker Docker image, which adds **5–10 minutes** (it is
+cached and reused afterwards, and you can skip it with
+`starburst_setup(build_image = FALSE)` and build lazily on first job launch).
 
-The simplest way to use staRburst is with the `furrr` package:
+## Your first job
+
+The simplest way to use staRburst is `starburst_map()` — hand it your inputs and a
+function, and it runs the function over each input on AWS workers:
 
 ```{r}
-library(furrr)
 library(starburst)
 
 # Define your work
@@ -62,153 +144,103 @@ expensive_simulation <- function(i) {
   mean(results)
 }
 
-# Local execution (single core)
+# Run across 50 cloud workers (EC2 by default)
+results <- starburst_map(1:100, expensive_simulation, workers = 50)
+#> [Starting] Starting starburst cluster with 50 workers
+#> [Status] Processing 100 items with 50 workers
+#> [Starting] Submitting 100 tasks...
+#> [Wait] Progress: 100/100 (128.0s)
+#> [OK] Completed in 128.0 seconds
+#> [Cost] Estimated cost: $0.85
+```
+
+That is the whole workflow: `starburst_setup()` once, then `starburst_map()` per
+job. Everything below builds on this.
+
+## Migrating existing `future` / `furrr` code {#migrating-existing-future-furrr-code}
+
+If you already use `future` or `furrr`, you don't need `starburst_map()` — set the
+plan to `starburst` and your existing `future_map()` / `future_lapply()` calls run
+on AWS unchanged. The two styles are equivalent; use whichever matches your code:
+
+```{r}
+library(furrr)
+library(starburst)
+
+# Local baseline
 plan(sequential)
-system.time({
-  results_local <- future_map(1:100, expensive_simulation)
-})
-#> ~16 minutes on typical laptop
+results_local <- future_map(1:100, expensive_simulation)
 
-# Cloud execution (50 workers)
-plan(future_starburst, workers = 50)
-system.time({
-  results_cloud <- future_map(1:100, expensive_simulation)
-})
-#> ~2 minutes (including 45s startup)
-#> Cost: ~$0.85
+# Same code, now on 50 cloud workers — just change the plan
+plan(starburst, workers = 50)
+results_cloud <- future_map(1:100, expensive_simulation)
 
-# Results are identical
+# Results are identical to the local run
 identical(results_local, results_cloud)
 #> [1] TRUE
 ```
 
-## Example 1: Monte Carlo Simulation
+The two calls below do the same thing — pick the one that fits your codebase:
 
 ```{r}
-library(starburst)
-library(furrr)
+# Direct API
+results <- starburst_map(1:100, expensive_simulation, workers = 50)
 
-# Simulate portfolio returns
-simulate_portfolio <- function(seed) {
-  set.seed(seed)
-  
-  # Random walk for 252 trading days
-  returns <- rnorm(252, mean = 0.0003, sd = 0.02)
-  prices <- cumprod(1 + returns)
-  
-  list(
-    final_value = prices[252],
-    max_drawdown = max(cummax(prices) - prices) / max(prices),
-    sharpe_ratio = mean(returns) / sd(returns) * sqrt(252)
-  )
-}
-
-# Run 10,000 simulations on 100 workers
-plan(future_starburst, workers = 100)
-
-results <- future_map(1:10000, simulate_portfolio, .options = furrr_options(seed = TRUE))
-
-# Analyze results
-final_values <- sapply(results, `[[`, "final_value")
-hist(final_values, breaks = 50, main = "Distribution of Portfolio Final Values")
-
-# 95% confidence interval
-quantile(final_values, c(0.025, 0.975))
+# future / furrr
+plan(starburst, workers = 50)
+results <- future_map(1:100, expensive_simulation)
 ```
 
-**Performance**:
-- Local (single core): ~4 hours
-- Cloud (100 workers): ~3 minutes
-- Cost: ~$1.80
+## Real-world examples
 
-## Example 2: Bootstrap Resampling
+Rather than repeat toy snippets here, the article gallery carries complete,
+**measured** end-to-end examples — each with real runtimes, costs, and the batching
+choices that make (or break) a workload:
 
-```{r}
-library(starburst)
-library(furrr)
+- [Monte Carlo simulation](https://starburst.ing/articles/example-monte-carlo.html)
+  — many small simulations batched into a handful of tasks.
+- [Bootstrap resampling](https://starburst.ing/articles/example-bootstrap.html)
+  — resampling a shared dataset across workers.
+- [Grid search](https://starburst.ing/articles/example-grid-search.html),
+  [risk modeling](https://starburst.ing/articles/example-risk-modeling.html),
+  [geospatial](https://starburst.ing/articles/example-geospatial.html), and
+  [more](https://starburst.ing/articles/).
 
-# Your data
-data <- read.csv("my_data.csv")
-
-# Bootstrap function
-bootstrap_regression <- function(i, data) {
-  # Resample with replacement
-  boot_indices <- sample(nrow(data), replace = TRUE)
-  boot_data <- data[boot_indices, ]
-  
-  # Fit model
-  model <- lm(y ~ x1 + x2 + x3, data = boot_data)
-  
-  # Return coefficients
-  coef(model)
-}
-
-# Run 10,000 bootstrap samples
-plan(future_starburst, workers = 50)
-
-boot_results <- future_map(1:10000, bootstrap_regression, data = data)
-
-# Convert to matrix
-boot_coefs <- do.call(rbind, boot_results)
-
-# 95% confidence intervals for each coefficient
-apply(boot_coefs, 2, quantile, probs = c(0.025, 0.975))
-```
-
-## Example 3: Genomics Pipeline
-
-```{r}
-library(starburst)
-library(furrr)
-
-# Process one sample
-process_sample <- function(sample_id) {
-  # Read from S3 (data already in cloud)
-  fastq_path <- sprintf("s3://my-genomics-data/samples/%s.fastq", sample_id)
-  data <- read_fastq(fastq_path)
-  
-  # Align reads
-  aligned <- align_reads(data, reference = "hg38")
-  
-  # Call variants
-  variants <- call_variants(aligned)
-  
-  # Return summary
-  list(
-    sample_id = sample_id,
-    num_variants = nrow(variants),
-    variants = variants
-  )
-}
-
-# Process 1000 samples on 100 workers
-sample_ids <- list.files("s3://my-genomics-data/samples/", pattern = ".fastq$")
-
-plan(future_starburst, workers = 100)
-
-results <- future_map(sample_ids, process_sample, .progress = TRUE)
-
-# Combine results
-all_variants <- do.call(rbind, lapply(results, `[[`, "variants"))
-```
-
-**Performance**:
-- Local (sequential): ~208 hours (8.7 days)
-- Cloud (100 workers): ~2 hours
-- Cost: ~$47
+Before you size a job, read the two guides that report real numbers on when the cloud
+wins, when it loses, and how to pick task/worker counts:
+[Workload Shapes](https://starburst.ing/articles/workload-shapes.html) and
+[Performance](https://starburst.ing/articles/performance.html). The short version:
+each task should be real work (seconds or more), and thousands of tiny tasks should be
+**batched** into dozens–hundreds — see [Batch Small Tasks](#batch-small-tasks) below.
 
 ## Working with Data
+
+Base R's `read.csv()`/`readRDS()` cannot read `s3://` URLs — you need an S3 client
+on the worker. A small helper keeps the examples below concrete and copy-pasteable
+(the worker image already includes `paws.storage`):
+
+```{r}
+# Download an s3://bucket/key object to a temp file and read it on the worker.
+read_s3 <- function(s3_uri, reader = readRDS) {
+  m <- regmatches(s3_uri, regexec("^s3://([^/]+)/(.+)$", s3_uri))[[1]]
+  bucket <- m[2]; key <- m[3]
+  tmp <- tempfile()
+  obj <- paws.storage::s3()$get_object(Bucket = bucket, Key = key)
+  writeBin(obj$Body, tmp)
+  reader(tmp)
+}
+```
 
 ### Data Already in S3
 
 If your data is already in S3, workers can read it directly:
 
 ```{r}
-plan(future_starburst, workers = 50)
+plan(starburst, workers = 50)
 
 results <- future_map(file_list, function(file) {
-  # Workers read directly from S3
-  data <- read.csv(sprintf("s3://my-bucket/%s", file))
+  # Each worker pulls its file from S3 (read_s3 defined above)
+  data <- read_s3(sprintf("s3://my-bucket/%s", file), reader = read.csv)
   process(data)
 })
 ```
@@ -222,9 +254,10 @@ For smaller datasets, you can pass data as arguments:
 data <- read.csv("local_file.csv")
 
 # staRburst automatically uploads to S3 and distributes
-plan(future_starburst, workers = 50)
+plan(starburst, workers = 50)
 
-results <- future_map(1:1000, function(i) {
+# `replicates` is your vector of inputs (e.g. bootstrap replicate ids)
+results <- future_map(replicates, function(i) {
   # Each worker gets a copy of 'data'
   bootstrap_analysis(data, i)
 })
@@ -232,19 +265,23 @@ results <- future_map(1:1000, function(i) {
 
 ### Large Data Optimization
 
-For very large objects, pre-upload to S3:
+For very large objects, upload once to S3 yourself and have each worker read it
+from there, rather than serializing the object into every task:
 
 ```{r}
-# Upload once
-large_data <- read.csv("huge_file.csv")
-s3_path <- starburst_upload(large_data, "s3://my-bucket/large_data.rds")
+# Upload once from your machine
+paws.storage::s3()$put_object(
+  Bucket = "my-bucket", Key = "large_data.rds",
+  Body = "huge_file.rds"
+)
+s3_path <- "s3://my-bucket/large_data.rds"
 
-# Workers read from S3
-plan(future_starburst, workers = 100)
+# Workers read from S3 inside the task (read_s3 helper defined above)
+plan(starburst, workers = 100)
 
-results <- future_map(1:1000, function(i) {
-  # Read from S3 inside worker
-  data <- readRDS(s3_path)
+# `tasks` is your vector of work items
+results <- future_map(tasks, function(i) {
+  data <- read_s3(s3_path)   # readRDS by default
   process(data, i)
 })
 ```
@@ -255,36 +292,45 @@ results <- future_map(1:1000, function(i) {
 
 ```{r}
 # Check cost before running
-plan(future_starburst, workers = 100, cpu = 4, memory = "8GB")
+plan(starburst, workers = 100, cpu = 4, memory = "8GB")
 #> Estimated cost: ~$3.50/hour
 ```
 
 ### Set Cost Limits
 
 ```{r}
-# Set maximum cost per job
+# Set an hourly cost ceiling (USD/hour) — jobs above this rate won't start
 starburst_config(
-  max_cost_per_job = 10,      # Don't start jobs that would cost >$10
-  cost_alert_threshold = 5     # Warn when approaching $5
+  max_hourly_cost = 10,       # Don't start jobs estimated over $10/hour
+  cost_alert_threshold = 5     # Warn at $5/hour
 )
 
 # Now jobs exceeding limit will error before starting
-plan(future_starburst, workers = 1000)  # Would cost ~$35/hour
+plan(starburst, workers = 1000)  # Would cost ~$35/hour
 #> Error: Estimated cost ($35/hr) exceeds limit ($10/hr)
 ```
 
-### Track Actual Costs
+### Cost estimates
+
+After a run, staRburst reports an **estimated** cost — the measured worker runtime
+multiplied by the current AWS price for your instance type (On-Demand or Spot),
+looked up live from the AWS Pricing API (and cached; it falls back to built-in rates
+offline). It is a close estimate, not a figure from AWS billing / Cost Explorer.
 
 ```{r}
-plan(future_starburst, workers = 50)
+plan(starburst, workers = 50)
 
 results <- future_map(data, process)
 
-#> Cluster runtime: 23 minutes
-#> Total cost: $1.34
+#> Cluster runtime: ~23 minutes
+#> Estimated cost: ~$1.34
 ```
 
-## Quota Management
+## Quota Management (Fargate backend)
+
+> This section applies to the **Fargate** backend. On the default **EC2** backend,
+> worker count is bounded by your normal EC2 On-Demand / Spot instance limits, not
+> the Fargate vCPU quota below. If you stay on EC2 you can usually skip this.
 
 ### Check Your Quota
 
@@ -304,8 +350,8 @@ starburst_request_quota_increase(vcpus = 500)
 #>   Current: 100 vCPUs
 #>   Requested: 500 vCPUs
 #>
-#> ✓ Quota increase requested (Case ID: 12345678)
-#> ✓ AWS typically approves within 1-24 hours
+#> [OK] Quota increase requested (Case ID: 12345678)
+#> [OK] AWS typically approves within 1-24 hours
 ```
 
 ### Wave-Based Execution
@@ -314,25 +360,25 @@ If you request more workers than your quota allows, staRburst automatically uses
 
 ```{r}
 # Quota allows 25 workers, but you request 100
-plan(future_starburst, workers = 100, cpu = 4)
+plan(starburst, workers = 100, cpu = 4)
 
-#> ⚠ Requested: 100 workers (400 vCPUs)
-#> ⚠ Current quota: 100 vCPUs (allows 25 workers max)
+#> [!] Requested: 100 workers (400 vCPUs)
+#> [!] Current quota: 100 vCPUs (allows 25 workers max)
 #>
-#> 📋 Execution plan:
-#>   • Running in 4 waves of 25 workers each
+#> [Plan] Execution plan:
+#>   - Running in 4 waves of 25 workers each
 #>
-#> 💡 Request quota increase to 500 vCPUs? [y/n]: y
+#> [TIP] Request quota increase to 500 vCPUs? [y/n]: y
 #>
-#> ✓ Quota increase requested
-#> ⚡ Starting wave 1 (25 workers)...
+#> [OK] Quota increase requested
+#> [Starting] Starting wave 1 (25 workers)...
 
-results <- future_map(1:1000, expensive_function)
+results <- future_map(inputs, expensive_function)
 
-#> ⚡ Wave 1: 100% complete (250 tasks)
-#> ⚡ Wave 2: 100% complete (500 tasks)
-#> ⚡ Wave 3: 100% complete (750 tasks)
-#> ⚡ Wave 4: 100% complete (1000 tasks)
+#> [Wave] Wave 1: 100% complete (250 tasks)
+#> [Wave] Wave 2: 100% complete (500 tasks)
+#> [Wave] Wave 3: 100% complete (750 tasks)
+#> [Wave] Wave 4: 100% complete (1000 tasks)
 ```
 
 ## Troubleshooting
@@ -375,7 +421,7 @@ starburst_rebuild_environment()
 starburst_logs(task_id = "failed-task-id")
 
 # Often due to memory limits - increase worker memory
-plan(future_starburst, workers = 50, memory = "16GB")  # Default is 8GB
+plan(starburst, workers = 50, memory = "16GB")  # Default is 8GB
 ```
 
 **Slow data transfer**: Large objects taking too long
@@ -440,12 +486,12 @@ results <- future_map(1:1000, function(i) process(big_data, i))
 Do:
 ```{r}
 # Upload once to S3
-s3_path <- "s3://bucket/big_data.csv"
-write.csv(big_data, s3_path)
+tmp <- tempfile(fileext = ".csv"); write.csv(big_data, tmp, row.names = FALSE)
+paws.storage::s3()$put_object(Bucket = "bucket", Key = "big_data.csv", Body = tmp)
 
-# Workers read from S3
-results <- future_map(1:1000, function(i) {
-  data <- read.csv(s3_path)
+# Workers read from S3 (read_s3 helper from "Working with Data" above)
+results <- future_map(tasks, function(i) {
+  data <- read_s3("s3://bucket/big_data.csv", reader = read.csv)
   process(data, i)
 })
 ```
@@ -454,7 +500,7 @@ results <- future_map(1:1000, function(i) {
 
 ```{r}
 starburst_config(
-  max_cost_per_job = 50,           # Prevent accidents
+  max_hourly_cost = 50,            # Cap the hourly rate (USD/hour)
   cost_alert_threshold = 25        # Get warned early
 )
 ```
@@ -473,24 +519,24 @@ plan(sequential)  # Switch back to local
 
 ```{r}
 # High CPU, low memory (CPU-bound work)
-plan(future_starburst, workers = 50, cpu = 8, memory = "16GB")
+plan(starburst, workers = 50, cpu = 8, memory = "16GB")
 
 # Low CPU, high memory (memory-bound work)
-plan(future_starburst, workers = 25, cpu = 4, memory = "32GB")
+plan(starburst, workers = 25, cpu = 4, memory = "32GB")
 ```
 
 ### Timeout
 
 ```{r}
 # Increase timeout for long-running tasks (default 1 hour)
-plan(future_starburst, workers = 10, timeout = 7200)  # 2 hours
+plan(starburst, workers = 10, timeout = 7200)  # 2 hours
 ```
 
 ### Region
 
 ```{r}
 # Use specific region (default from config)
-plan(future_starburst, workers = 50, region = "us-west-2")
+plan(starburst, workers = 50, region = "us-west-2")
 ```
 
 ## Next Steps

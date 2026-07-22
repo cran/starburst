@@ -73,14 +73,16 @@ knitr::opts_chunk$set(
 #             local_time * 100 / 60))
 
 ## ----cloud, eval=FALSE--------------------------------------------------------
-# # Run 10,000 simulations on 50 workers
+# # 100 tasks x 100 simulations = 10,000 simulations, batched
+# batches <- split(1:10000, ceiling(seq_along(1:10000) / 100))
 # results <- starburst_map(
-#   1:10000,
-#   simulate_portfolio,
+#   batches,
+#   function(seeds) lapply(seeds, simulate_portfolio),
 #   workers = 50,
 #   cpu = 2,
 #   memory = "4GB"
 # )
+# results <- unlist(results, recursive = FALSE)  # flatten to 10,000 results
 
 ## ----analysis, eval=FALSE-----------------------------------------------------
 # # Extract metrics

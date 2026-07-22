@@ -5,9 +5,10 @@
 
 <!-- badges: start -->
 
+[![CRAN
+status](https://www.r-pkg.org/badges/version/starburst)](https://cran.r-project.org/package=starburst)
 [![R-CMD-check](https://github.com/scttfrdmn/starburst/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/scttfrdmn/starburst/actions/workflows/R-CMD-check.yaml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/license/apache-2-0)
-[![Version](https://img.shields.io/badge/version-0.3.6-brightgreen.svg)](https://github.com/scttfrdmn/starburst/releases/tag/v0.3.6)
 <!-- badges: end -->
 
 > Seamless AWS cloud bursting for parallel R workloads
@@ -31,20 +32,20 @@ and Fargate (serverless) backends.
   automatically available on workers
 - **Smart Quota Management**: Automatically handles AWS quota limits
   with wave execution
-- **Cost Transparent**: See estimated and actual costs for every run
+- **Cost Transparent**: Every run shows an estimated cost (measured
+  runtime × current AWS On-Demand/Spot pricing) so there are no billing
+  surprises
 - **Auto Cleanup**: Workers shut down automatically when done
 
 ## Installation
 
-**CRAN submission in progress for v0.3.6** (expected within 2-4 weeks).
-
-Once available:
+From CRAN:
 
 ``` r
 install.packages("starburst")
 ```
 
-Development version from GitHub:
+Development version (from GitHub):
 
 ``` r
 remotes::install_github("scttfrdmn/starburst")
@@ -55,25 +56,23 @@ remotes::install_github("scttfrdmn/starburst")
 ``` r
 library(starburst)
 
-# One-time setup (2 minutes)
+# One-time setup (~2 min to provision; first run also builds the worker image,
+# +5-10 min once)
 starburst_setup()
 
-# Run parallel computation on AWS
+# Run parallel computation on AWS (each task should be real work — seconds+ —
+# so it's worth shipping; batch tiny items first). Console output is illustrative:
 results <- starburst_map(
-  1:1000,
+  inputs,                       # e.g. a list of scenarios / parameter sets
   function(x) expensive_computation(x),
   workers = 50
 )
-#> 🚀 Starting starburst cluster with 50 workers
-#> 💰 Estimated cost: ~$2.80/hour
-#> 📊 Processing 1000 items with 50 workers
-#> 📦 Created 50 chunks (avg 20 items per chunk)
-#> 🚀 Submitting tasks...
-#> ✓ Submitted 50 tasks
-#> ⏳ Progress: 50/50 tasks (3.2 minutes elapsed)
-#>
-#> ✓ Completed in 3.2 minutes
-#> 💰 Estimated cost: $0.15
+#> [Starting] Starting starburst cluster with 50 workers
+#> [Status] Processing 200 items with 50 workers
+#> [Starting] Submitting 200 tasks...
+#> [Wait] Progress: 200/200
+#> [OK] Completed
+#> [Cost] Estimated cost: (printed per run)
 ```
 
 ## Example: Monte Carlo Simulation
@@ -93,19 +92,16 @@ simulate_portfolio <- function(seed) {
   )
 }
 
-# Run 10,000 simulations on 100 AWS workers
+# Each simulation is tiny (sub-millisecond), so BATCH them: 100 tasks of 100
+# simulations each, not 10,000 one-simulation tasks. (Thousands of tiny tasks are
+# an anti-pattern — see the "Workload Shapes" guide for measured numbers.)
+batches <- split(1:10000, ceiling(seq_along(1:10000) / 100))
 results <- starburst_map(
-  1:10000,
-  simulate_portfolio,
-  workers = 100
+  batches,
+  function(seeds) lapply(seeds, simulate_portfolio),
+  workers = 50
 )
-#> 🚀 Starting starburst cluster with 100 workers
-#> 💰 Estimated cost: ~$5.60/hour
-#> 📊 Processing 10000 items with 100 workers
-#> ⏳ Progress: 100/100 tasks (3.1 minutes elapsed)
-#>
-#> ✓ Completed in 3.1 minutes
-#> 💰 Estimated cost: $0.29
+results <- unlist(results, recursive = FALSE)  # flatten to 10,000 results
 
 # Extract results
 final_values <- sapply(results, function(x) x$final_value)
@@ -114,11 +110,12 @@ sharpe_ratios <- sapply(results, function(x) x$sharpe_ratio)
 # Summary
 mean(final_values)    # Average portfolio outcome
 quantile(final_values, c(0.05, 0.95))  # Risk range
-
-# Comparison:
-# Local (single core): ~4 hours
-# Cloud (100 workers): 3 minutes, $0.29
 ```
+
+> For real, measured performance (when the cloud wins, when it loses,
+> and how to size tasks/workers), see the [Workload
+> Shapes](https://starburst.ing/articles/workload-shapes.html) and
+> [Performance](https://starburst.ing/articles/performance.html) guides.
 
 ## Advanced Usage
 
@@ -163,66 +160,72 @@ results <- starburst_map(
 Run long jobs and disconnect - results persist in S3:
 
 ``` r
-# Start detached session
-session <- starburst_session(workers = 50, detached = TRUE)
+# Start a detached session (EC2 + Spot by default)
+session <- starburst_session(workers = 50)
 
-# Submit work and get session ID
-session$submit(quote({
-  results <- starburst_map(huge_dataset, expensive_function)
-  saveRDS(results, "results.rds")
-}))
+# Fan work out by submitting one task per input
+task_ids <- lapply(inputs, function(input) {
+  session$submit(quote(expensive_function(input)),
+                 globals = list(input = input))
+})
 session_id <- session$session_id
 
-# Disconnect - job continues running
-# Later (hours/days), reconnect:
+# Disconnect - job continues running.
+# Later (hours/days), reconnect from a fresh R session:
 session <- starburst_session_attach(session_id)
-status <- session$status()  # Check progress
-results <- session$collect()  # Get results
+status  <- session$status()          # Check progress
+results <- session$collect(wait = TRUE)  # Collect results (in submission order)
 
 # Cleanup when done
-session$cleanup(force = TRUE)
+session$cleanup()
 ```
 
 ## How It Works
 
 1.  **Environment Snapshot**: Captures your R packages using renv
-2.  **Container Build**: Creates Docker image with your environment,
+2.  **Container Build**: Creates a Docker image with your environment,
     cached in ECR
-3.  **Task Distribution**: Splits data into chunks across workers
-4.  **Task Submission**: Launches Fargate tasks (or sequential batches
-    if quota-limited)
-5.  **Data Transfer**: Serializes task data to S3 using fast qs format
-6.  **Execution**: Workers pull data, execute function on chunk items,
-    push results
-7.  **Result Collection**: Downloads and combines results in correct
-    order
-8.  **Cleanup**: Automatically shuts down workers
+3.  **Task Creation**: Creates one task per element of your input (`.x`)
+    — there is no automatic chunking; batch small items yourself if
+    per-task overhead matters
+4.  **Worker Launch**: Starts EC2 workers by default (Spot-enabled), or
+    Fargate tasks if you pass `launch_type = "FARGATE"`; falls back to
+    waves if quota-limited
+5.  **Data Transfer**: Serializes each task’s function, inputs, and
+    globals to S3 using the fast `qs2` format
+6.  **Execution**: Each worker pulls a task from S3, runs your function,
+    pushes the result back to S3
+7.  **Result Collection**: Downloads and combines results in the
+    original order
+8.  **Cleanup**: Automatically shuts workers down (warm-pool timeout
+    configurable)
 
 ## Cost Management
 
 ``` r
-# Set cost limits
+# Set an hourly cost ceiling (USD/hour)
 starburst_config(
-  max_cost_per_job = 10,      # Hard limit
-  cost_alert_threshold = 5     # Warning at $5
+  max_hourly_cost = 10,       # Jobs estimated over $10/hour won't start
+  cost_alert_threshold = 5     # Warn at $5/hour
 )
 
 # Costs shown transparently
 results <- starburst_map(data, fn, workers = 100)
-#> 💰 Estimated cost: ~$3.50/hour
-#> ✓ Completed in 23 minutes
-#> 💰 Estimated cost: $1.34
+#> [Starting] Starting starburst cluster with 100 workers
+#> [OK] Completed in 1380.0 seconds
+#> [Cost] Estimated cost: $1.34
 ```
 
 ## Quota Management
 
-staRburst automatically handles AWS Fargate quota limitations:
+When using the Fargate backend, staRburst automatically handles AWS
+Fargate vCPU quota limits (EC2 uses your standard On-Demand/Spot
+limits):
 
 ``` r
-results <- starburst_map(data, fn, workers = 100, cpu = 4)
-#> ⚠ Requested 100 workers (400 vCPUs) but quota allows 25 workers (100 vCPUs)
-#> ⚠ Using 25 workers instead
-#> 💰 Estimated cost: ~$1.40/hour
+results <- starburst_map(data, fn, workers = 100, cpu = 4, launch_type = "FARGATE")
+#> [!] Requested 100 workers (400 vCPUs) but quota allows 25 workers (100 vCPUs)
+#> [!] Using 25 workers instead
 ```
 
 Your work still completes, just with fewer workers. You can request
@@ -242,9 +245,8 @@ quota increases through AWS Service Quotas.
 
 ``` r
 starburst_config(
-  region = "us-east-1",
-  max_cost_per_job = 10,
-  cost_alert_threshold = 5
+  max_hourly_cost = 10,        # USD/hour rate ceiling
+  cost_alert_threshold = 5     # USD/hour warning
 )
 ```
 
@@ -288,18 +290,28 @@ Started](https://starburst.ing/articles/getting-started.html) guide.
 
 ## Roadmap
 
-### v0.3.6 (Current - CRAN Submission)
+### v0.3.9 (current CRAN release)
+
+- ✅ Backend arguments (`launch_type`/`instance_type`/`use_spot`) on
+  `starburst_map()`/`starburst_cluster()`
+- ✅ One-step EC2 setup (`starburst_setup()` provisions the default
+  capacity provider)
+- ✅ Live AWS pricing for cost estimates (Pricing API + spot history,
+  cached)
+- ✅ Measured performance/workload-shape guides
+
+### v0.3.8
 
 - ✅ Direct API (`starburst_map`, `starburst_cluster`)
-- ✅ AWS Fargate integration
-- ✅ EC2 backend support with spot instances
+- ✅ EC2 backend (default, with spot instances) + Fargate (serverless
+  alternative)
 - ✅ Detached session mode for long-running jobs
 - ✅ Automatic environment management
 - ✅ Cost tracking and quota handling
-- ✅ Full `future` backend integration
-- ✅ Support for `future.apply`, `furrr`, `targets`
-- ✅ Comprehensive AWS integration testing
-- ✅ CRAN-ready (0 errors, 0 notes)
+- ✅ Full `future` backend integration (`future.apply`, `furrr`,
+  `targets`)
+- ✅ Security hardening (safe command execution, worker limits)
+- ✅ Published on CRAN (0 errors, 0 warnings, 0 notes)
 
 ### Future Releases
 
@@ -316,7 +328,8 @@ guidelines.
 
 ## License
 
-Apache License 2.0 - see [LICENSE](https://github.com/scttfrdmn/starburst/blob/main/LICENSE)
+Apache License 2.0 - see
+[LICENSE](https://github.com/scttfrdmn/starburst/blob/main/LICENSE)
 
 Copyright 2026 Scott Friedman
 
@@ -327,7 +340,7 @@ Copyright 2026 Scott Friedman
   title = {staRburst: Seamless AWS Cloud Bursting for R},
   author = {Scott Friedman},
   year = {2026},
-  version = {0.3.6},
+  version = {0.3.9},
   url = {https://starburst.ing},
   license = {Apache-2.0}
 }

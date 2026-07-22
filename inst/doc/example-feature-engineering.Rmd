@@ -183,17 +183,17 @@ local_features <- engineer_features(sample_customers, transactions)
 
 local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 
-cat(sprintf("✓ Completed in %.2f seconds\n", local_time))
+cat(sprintf("[OK] Completed in %.2f seconds\n", local_time))
 cat(sprintf("  Generated %d features per customer\n", ncol(local_features) - 1))
 cat(sprintf("  Estimated time for all %s customers: %.1f minutes\n",
             format(n_customers, big.mark = ","),
             local_time * (n_customers / 500) / 60))
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
 Processing features for 500 customers locally...
-✓ Completed in 3.8 seconds
+[OK] Completed in 3.8 seconds
   Generated 15 features per customer
   Estimated time for all 5,000 customers: 38.0 seconds
 ```
@@ -232,24 +232,20 @@ results <- starburst_map(
 
 cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "secs"))
 
-cat(sprintf("\n✓ Completed in %.1f seconds\n", cloud_time))
+cat(sprintf("\n[OK] Completed in %.1f seconds\n", cloud_time))
 
 # Combine results
 features <- do.call(rbind, results)
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
-🚀 Starting starburst cluster with 20 workers
-💰 Estimated cost: ~$1.60/hour
-📊 Processing 20 items with 20 workers
-📦 Created 20 chunks (avg 250 customers per chunk)
-🚀 Submitting tasks...
-✓ Submitted 20 tasks
-⏳ Progress: 20/20 tasks (6.2 seconds elapsed)
-
-✓ Completed in 6.2 seconds
-💰 Actual cost: $0.003
+[Starting] Starting starburst cluster with 20 workers
+[Status] Processing 20 items with 20 workers
+[Starting] Submitting 20 tasks...
+[Wait] Progress: 20/20 (6.2s)
+[OK] Completed in 6.2 seconds
+[Cost] Estimated cost: $0.003
 ```
 
 ## Results Analysis
@@ -294,7 +290,7 @@ cat(sprintf("Average transactions: %.1f\n", mean(high_value$total_transactions))
 cat(sprintf("Average online rate: %.1f%%\n", mean(high_value$online_pct)))
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
 === Feature Engineering Results ===
 
@@ -332,16 +328,22 @@ Average online rate: 28.9%
 
 ## Performance Comparison
 
-| Method | Customers | Time | Cost | Speedup |
-|--------|-----------|------|------|---------|
-| Local | 500 | 3.8 sec | $0 | - |
-| Local (est.) | 5,000 | 38 sec | $0 | 1x |
-| staRburst | 5,000 | 6.2 sec | $0.003 | 6.1x |
+| Method | Customers | Compute time | Cost |
+|--------|-----------|------|------|
+| Local | 500 | 3.8 sec | $0 |
+| Local (est.) | 5,000 | 38 sec | $0 |
+| staRburst | 5,000 | 6.2 sec (compute only) | $0.003 |
+
+> **Reading these numbers honestly:** the staRburst row is *compute time only* on a
+> warm pool and excludes the one-time startup (~2 minutes) and image pull. For a job
+> that finishes in ~38 seconds locally, that startup makes local the faster choice —
+> these figures are illustrative, not a net-win claim. The payoff comes at scale
+> (100K+ customers or heavier per-record work). See `vignette("performance")`.
 
 **Key Insights**:
-- Excellent parallelization efficiency (6x speedup)
-- Minimal cost for significant time savings
-- Scales well to larger datasets (100K+ customers)
+- Feature engineering parallelizes near-linearly once workers are warm
+- Minimal per-task cost
+- The win is at scale, where startup overhead is amortized away
 - Can process 100 customers/second with 20 workers
 
 ## Advanced: Adding ML-Ready Features

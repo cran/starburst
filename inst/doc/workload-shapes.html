@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Workload Shapes: When (and How) to Use staRburst</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Workload Shapes: When (and How) to Use
+staRburst</h1>
+
+
+
+<p>Whether staRburst helps or hurts is not about your <em>field</em> —
+it’s about the <strong>shape</strong> of your work. This guide walks
+through the levers that decide it, each with a runnable pattern and,
+where it matters, <strong>real measured numbers</strong> from
+<code>bench/benchmark.R</code> (see <code>bench/README.md</code>).</p>
+<blockquote>
+<p><strong>Measurement setup (all tables below).</strong> staRburst
+0.3.9; AWS us-east-1; EC2 <code>c7i.xlarge</code> Spot workers; cold
+start unless noted. <strong>Local baseline machine:</strong> Apple M4
+Pro (Mac16,11) — 12 cores (8 performance + 4 efficiency), 48 GB RAM,
+macOS 26.5.2, R 4.6.1. Local baselines are run
+<strong>sequentially</strong> (single core), so they are a
+<em>conservative</em> reference: your laptop’s multi-core
+<code>future</code>/<code>parallel</code> time would be lower, and the
+cloud’s advantage correspondingly narrower. Tested 2026-07-21.</p>
+</blockquote>
+<p>There are four levers. Learn to read them and you can predict the
+outcome for any workload:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Task length</strong> — how much work each task does.</li>
+<li><strong>Task count</strong> — how many tasks you create (and whether
+to batch).</li>
+<li><strong>Fan-out width</strong> — how many workers you spread
+across.</li>
+<li><strong>Cost vs. time</strong> — what you’re actually
+optimizing.</li>
+</ol>
+<p>Plus one pro tip on <strong>where each task writes its
+output</strong>.</p>
+<hr />
+<div id="lever-1-task-length-is-each-task-worth-shipping" class="section level2">
+<h2>Lever 1 — Task length: is each task worth shipping?</h2>
+<p>Every task pays a fixed tax: it’s serialized, uploaded to S3, pulled
+by a worker, and its result uploaded back. Plus the pool pays a one-time
+~75–90 s cold start. If the task’s actual compute is smaller than that
+tax, the cloud only makes things slower.</p>
+<p>Two measured runs, same 20–30 workers, <strong>opposite
+verdicts</strong> — the only thing that changed is per-task work:</p>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Shape</th>
+<th>Tasks</th>
+<th>Local (seq)</th>
+<th>Cloud total (cold)</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Heavy</strong> — ~10 s of SVD each</td>
+<td>30</td>
+<td>319.3 s (5.3 min)</td>
+<td><strong>125.8 s</strong> (87.5 s startup + 38.4 s compute)</td>
+<td>✅ ~2.5× faster, $0.06</td>
+</tr>
+<tr class="even">
+<td><strong>Light</strong> — sub-second each</td>
+<td>20</td>
+<td>0.1 s</td>
+<td>102.6 s</td>
+<td>❌ ~1000× slower, $0.03</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Heavy tasks (minutes each) — the cloud wins</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(scenarios, run_expensive_model, <span class="at">workers =</span> <span class="dv">30</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="co"># Trivially cheap tasks — just do it locally</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">lapply</span>(inputs, quick_function)</span></code></pre></div>
+<p><strong>Rule:</strong> if each task is sub-second, stay local.
+Seconds-to-minutes per task, with many of them, is the sweet spot.</p>
+<hr />
+</div>
+<div id="lever-2-task-count-batch-or-fall-off-a-cliff" class="section level2">
+<h2>Lever 2 — Task count: batch, or fall off a cliff</h2>
+<p>This is the one that surprises people. staRburst creates <strong>one
+task per element of <code>.x</code></strong>, and each task is a
+separate client-side S3 submit <em>and</em> collect — in a serial loop.
+It does <strong>not</strong> batch for you. So a “big parameter walk”
+submitted naively as one task per point doesn’t just get slow — it hits
+a wall on the <em>client</em>, before any compute happens.</p>
+<p>Same 10,000-point sweep, two ways — <strong>both measured on live
+AWS, identical work</strong>:</p>
+<table style="width:100%;">
+<colgroup>
+<col width="14%" />
+<col width="14%" />
+<col width="14%" />
+<col width="14%" />
+<col width="14%" />
+<col width="14%" />
+<col width="14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Approach</th>
+<th>Tasks</th>
+<th>Items</th>
+<th>Startup</th>
+<th>Compute + collect</th>
+<th>Cloud total</th>
+<th>Est. cost</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>✅ <strong>Batched</strong> (100 tasks × 100)</td>
+<td>100</td>
+<td>10,000</td>
+<td>105.0 s</td>
+<td><strong>70.4 s</strong></td>
+<td><strong>175.4 s</strong> (2.9 min)</td>
+<td><strong>$0.13</strong></td>
+</tr>
+<tr class="even">
+<td>❌ <strong>Naive</strong> (1 task per point)</td>
+<td>10,000</td>
+<td>10,000</td>
+<td>77.0 s</td>
+<td><strong>4,571.9 s</strong></td>
+<td><strong>4,648.9 s</strong> (77.5 min)</td>
+<td><strong>$3.46</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Read that again: the <strong>same 10,000 evaluations</strong> took
+<strong>2.9 minutes for $0.13</strong> batched, versus <strong>77
+minutes for $3.46</strong> naive — a <strong>~65× slowdown and ~27× cost
+blowup</strong>, purely from task count. The naive run spent over an
+hour with the client submitting 10,000 individual tasks to S3 one at a
+time (~1.5/sec) while 50 workers sat mostly idle — you pay for the
+workers the whole time. Nothing about the computation changed; only how
+it was packaged.</p>
+<p>This is the trap behind “just fan out my 10M-point sweep”: at 1M or
+10M tasks the naive path doesn’t take minutes longer, it takes
+<strong>hours-to-days</strong> and never gets cheaper. Batching isn’t an
+optimization here — it’s the difference between working and not.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># ❌ DON&#39;T: 10,000 tasks — ~10,000 serial S3 submits from your laptop</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>, evaluate_point, <span class="at">workers =</span> <span class="dv">50</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co"># ✅ DO: batch into ~100 chunks — 100 tasks, same 10,000 evaluations</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>batches <span class="ot">&lt;-</span> <span class="fu">split</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>, <span class="fu">ceiling</span>(<span class="fu">seq_along</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>) <span class="sc">/</span> <span class="dv">100</span>))</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(batches, <span class="cf">function</span>(ids) <span class="fu">lapply</span>(ids, evaluate_point),</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>                         <span class="at">workers =</span> <span class="dv">50</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">unlist</span>(results, <span class="at">recursive =</span> <span class="cn">FALSE</span>)  <span class="co"># flatten</span></span></code></pre></div>
+<p>Pick a batch size so each task runs for a couple of minutes:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>per_item_seconds <span class="ot">&lt;-</span> <span class="fl">0.5</span>              <span class="co"># measure this on a small local sample</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>target_task_seconds <span class="ot">&lt;-</span> <span class="dv">120</span>           <span class="co"># aim for ~2 min per task</span></span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>batch_size <span class="ot">&lt;-</span> <span class="fu">ceiling</span>(target_task_seconds <span class="sc">/</span> per_item_seconds)  <span class="co"># ~240 here</span></span></code></pre></div>
+<p><strong>Rule:</strong> thousands of tiny tasks is an anti-pattern.
+Batch fine-grained work so you have ~dozens-to-hundreds of tasks, each
+doing real work. A 1M- or 10M-point sweep <em>must</em> be batched —
+never submitted one point at a time.</p>
+<hr />
+</div>
+<div id="lever-3-fan-out-width-more-workers-is-not-always-better" class="section level2">
+<h2>Lever 3 — Fan-out width: more workers is not always better</h2>
+<p>Once you’ve sized your tasks, how many workers should you request?
+More workers cut wall-clock <strong>only up to the number of
+tasks</strong>, and with diminishing returns:</p>
+<ul>
+<li><strong>Workers &gt; tasks:</strong> the extra workers sit idle —
+you pay for them, they do nothing. 30 tasks on 100 workers still only
+uses 30.</li>
+<li><strong>Stragglers:</strong> the batch isn’t done until the
+<em>slowest</em> task is. Past a point, adding workers doesn’t help
+because you’re waiting on one long task, not queue depth.</li>
+<li><strong>Quota &amp; startup:</strong> more workers = more instances
+to launch (longer, more likely to hit limits) and, on Fargate, more vCPU
+quota consumed.</li>
+<li><strong>Cost scales with workers, speed doesn’t (past
+#tasks).</strong> Doubling workers beyond your task count doubles cost
+for zero speedup.</li>
+</ul>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># 200 tasks: ~50 workers is a reasonable ratio (each worker handles ~4 tasks)</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(param_sets, fit_model, <span class="at">workers =</span> <span class="dv">50</span>)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co"># 200 tasks on 500 workers: 300 workers idle, you pay for all 500 — don&#39;t</span></span></code></pre></div>
+<p><strong>Rule of thumb:</strong> workers ≈ number of tasks (capped at
+what your quota and budget allow), so each worker gets roughly one to a
+few tasks. Beyond <code>workers == tasks</code> there is no speedup left
+to buy.</p>
+<hr />
+</div>
+<div id="lever-4-cost-vs.-time-what-are-you-optimizing" class="section level2">
+<h2>Lever 4 — Cost vs. time: what are you optimizing?</h2>
+<p>staRburst reports an estimated cost per run. The key intuition:
+<strong>wall-clock and cost trade off differently.</strong></p>
+<ul>
+<li>Adding workers (up to #tasks) <strong>buys wall-clock at ~constant
+total cost</strong> — the same compute-seconds are just spread over more
+machines for less time. That’s the good trade: finish sooner for roughly
+the same dollars.</li>
+<li>Adding workers <strong>beyond #tasks</strong> buys nothing and
+<strong>raises cost</strong> (idle instances).</li>
+<li><strong>Spot instances</strong> (staRburst’s default,
+<code>use_spot = TRUE</code>) are ~70% cheaper than on-demand for
+interruption-tolerant batch work — almost always the right default
+here.</li>
+<li><strong>Warm pools</strong> amortize the ~90 s startup across many
+runs, so repeated jobs (parameter sweeps, daily pipelines) get
+dramatically better cost/time than a single cold run implies.</li>
+</ul>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Cheapest for a one-off: enough workers to cover the tasks, spot on (default)</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">starburst_map</span>(tasks, fn, <span class="at">workers =</span> <span class="fu">length</span>(tasks), <span class="at">use_spot =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co"># Repeated runs: a warm pool pays startup once — see the detached-sessions guide</span></span></code></pre></div>
+<p><strong>Rule:</strong> optimize wall-clock by matching workers to
+tasks; optimize cost by using spot (default) and warm pools for anything
+you run more than once.</p>
+<hr />
+</div>
+<div id="pro-tip-shard-your-s3-writes-across-prefixes" class="section level2">
+<h2>Pro tip — shard your S3 writes across prefixes</h2>
+<p>If your tasks write their <em>own</em> output to S3 (large results
+you don’t want to serialize back through the result channel), have
+<strong>each task write to a distinct prefix</strong>, not all to the
+same one. S3 scales throughput per prefix, so hundreds of tasks
+hammering a single prefix serialize against each other, while spreading
+them across prefixes lets S3 parallelize:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># ❌ Hundreds of tasks writing under ONE prefix — throughput bottleneck</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>key <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">&quot;s3://bucket/results/%d.parquet&quot;</span>, i)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co"># ✅ Shard across prefixes so S3 parallelizes the writes</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>shard <span class="ot">&lt;-</span> i <span class="sc">%%</span> <span class="dv">100</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>key <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">&quot;s3://bucket/results/shard=%02d/%d.parquet&quot;</span>, shard, i)</span></code></pre></div>
+<p>A cheap, high-leverage change for write-heavy fan-outs: same data,
+far more aggregate write throughput, because you’re no longer funneling
+every worker through one hot prefix.</p>
+<hr />
+</div>
+<div id="putting-it-together-a-diagnosis-checklist" class="section level2">
+<h2>Putting it together: a diagnosis checklist</h2>
+<p>Before you burst a workload, ask:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Is each task more than a second of work?</strong> If no →
+stay local (Lever 1).</li>
+<li><strong>Do you have thousands of tiny tasks?</strong> If yes → batch
+to ~dozens–hundreds (Lever 2).</li>
+<li><strong>Are you requesting more workers than tasks?</strong> If yes
+→ cap at #tasks (Lever 3).</li>
+<li><strong>Will you run it more than once?</strong> If yes → warm pool
++ spot (Lever 4).</li>
+<li><strong>Do tasks write big outputs to S3?</strong> If yes → shard
+across prefixes (pro tip).</li>
+</ol>
+<p>Get these right and staRburst turns a multi-hour local grind into
+minutes for pennies. Get them wrong and you’ll pay more to go slower —
+the mechanics don’t care which field you’re in, only about the shape of
+the work.</p>
+<p>See also: <code>vignette(&quot;performance&quot;)</code> for the underlying
+overhead model, and <code>vignette(&quot;detached-sessions&quot;)</code> for warm
+pools and long-running jobs.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

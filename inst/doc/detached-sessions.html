@@ -366,7 +366,7 @@ idle</li>
 <h3>Creating a Session</h3>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(starburst)</span>
 <span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co"># Create a detached session</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co"># Create a detached session (EC2 workers with Spot by default)</span></span>
 <span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>session <span class="ot">&lt;-</span> <span class="fu">starburst_session</span>(</span>
 <span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">10</span>,</span>
 <span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">4</span>,</span>
@@ -442,46 +442,64 @@ idle</li>
 </div>
 <div id="cleanup" class="section level3">
 <h3>Cleanup</h3>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Terminate workers and mark session complete</span></span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>session<span class="sc">$</span><span class="fu">cleanup</span>()</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Stop workers and mark the session terminated. S3 objects are PRESERVED by</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co"># default, so you can still reattach and collect afterwards.</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>session<span class="sc">$</span><span class="fu">cleanup</span>()</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co"># To also delete the session&#39;s S3 task/result objects, pass force = TRUE:</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>session<span class="sc">$</span><span class="fu">cleanup</span>(<span class="at">force =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
 </div>
+</div>
+<div id="choosing-and-tuning-the-backend" class="section level2">
+<h2>Choosing and tuning the backend</h2>
+<p>Sessions use <strong>EC2 with Spot instances by default</strong> — no
+extra arguments needed. You can tune the instance type, or opt into
+Fargate. A non-default instance type is provisioned automatically on
+first use (a one-time ~1–2 min step), or run
+<code>starburst_setup_ec2(instance_types = &quot;c8a.xlarge&quot;)</code> once to
+pre-provision it.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># Default is already EC2 + Spot (c7g.xlarge); override the instance type if you like</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>session <span class="ot">&lt;-</span> <span class="fu">starburst_session</span>(</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">50</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">instance_type =</span> <span class="st">&quot;c8a.xlarge&quot;</span>,  <span class="co"># AMD 8th gen; auto-provisioned on first use</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">use_spot =</span> <span class="cn">TRUE</span>                 <span class="co"># default TRUE — ~70% cheaper</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co"># Opt into the Fargate backend (serverless, task-based) instead</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>session <span class="ot">&lt;-</span> <span class="fu">starburst_session</span>(</span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">50</span>,</span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>  <span class="at">launch_type =</span> <span class="st">&quot;FARGATE&quot;</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>)</span></code></pre></div>
 </div>
 <div id="advanced-usage" class="section level2">
 <h2>Advanced Usage</h2>
-<div id="ec2-launch-type" class="section level3">
-<h3>EC2 Launch Type</h3>
-<p>For better price/performance:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>session <span class="ot">&lt;-</span> <span class="fu">starburst_session</span>(</span>
-<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="at">workers =</span> <span class="dv">50</span>,</span>
-<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">launch_type =</span> <span class="st">&quot;EC2&quot;</span>,</span>
-<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">instance_type =</span> <span class="st">&quot;c8a.xlarge&quot;</span>,  <span class="co"># AMD 8th gen</span></span>
-<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">use_spot =</span> <span class="cn">TRUE</span>                 <span class="co"># 70% cheaper</span></span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span></code></pre></div>
-</div>
 <div id="error-handling" class="section level3">
 <h3>Error Handling</h3>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># Tasks that fail are tracked</span></span>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="co"># Tasks that fail are tracked, not silently dropped</span></span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>session <span class="ot">&lt;-</span> <span class="fu">starburst_session</span>(<span class="at">workers =</span> <span class="dv">5</span>)</span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
-<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>, <span class="cf">function</span>(i) {</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>task_ids <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>, <span class="cf">function</span>(i) {</span>
 <span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  session<span class="sc">$</span><span class="fu">submit</span>(<span class="fu">quote</span>({</span>
 <span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>    <span class="cf">if</span> (i <span class="sc">==</span> <span class="dv">5</span>) <span class="fu">stop</span>(<span class="st">&quot;Intentional error&quot;</span>)</span>
 <span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>    i <span class="sc">*</span> <span class="dv">2</span></span>
-<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  }))</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  }), <span class="at">globals =</span> <span class="fu">list</span>(<span class="at">i =</span> i))</span>
 <span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>})</span>
 <span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a></span>
 <span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co"># Check status</span></span>
 <span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>status <span class="ot">&lt;-</span> session<span class="sc">$</span><span class="fu">status</span>()</span>
-<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="fu">print</span>(status)</span>
-<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co"># Failed: 1</span></span>
-<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a></span>
-<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co"># Failed tasks are still in results with error info</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="fu">print</span>(status)   <span class="co"># Failed: 1</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co"># collect() returns an entry for EVERY task, keyed by task id. A failed task</span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co"># comes back as a structured failure (error = TRUE) alongside the successes.</span></span>
 <span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a>results <span class="ot">&lt;-</span> session<span class="sc">$</span><span class="fu">collect</span>(<span class="at">wait =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a>failed_task <span class="ot">&lt;-</span> results[[<span class="dv">5</span>]]</span>
-<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="fu">print</span>(failed_task<span class="sc">$</span>error)</span>
-<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co"># TRUE</span></span>
-<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="fu">print</span>(failed_task<span class="sc">$</span>message)</span>
-<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co"># &quot;Intentional error&quot;</span></span></code></pre></div>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co"># Separate successes from failures</span></span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a>failures <span class="ot">&lt;-</span> <span class="fu">Filter</span>(<span class="cf">function</span>(r) <span class="fu">isTRUE</span>(r<span class="sc">$</span>error), results)</span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="fu">length</span>(failures)                 <span class="co"># 1</span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="fu">print</span>(failures[[<span class="dv">1</span>]]<span class="sc">$</span>message)     <span class="co"># &quot;Intentional error&quot;</span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co"># Successful values are the non-error entries</span></span>
+<span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a>successes <span class="ot">&lt;-</span> <span class="fu">Filter</span>(<span class="cf">function</span>(r) <span class="sc">!</span><span class="fu">isTRUE</span>(r<span class="sc">$</span>error), results)</span></code></pre></div>
 </div>
 <div id="partial-collection" class="section level3">
 <h3>Partial Collection</h3>

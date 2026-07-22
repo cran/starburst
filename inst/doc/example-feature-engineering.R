@@ -130,7 +130,7 @@ knitr::opts_chunk$set(
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 # 
-# cat(sprintf("✓ Completed in %.2f seconds\n", local_time))
+# cat(sprintf("[OK] Completed in %.2f seconds\n", local_time))
 # cat(sprintf("  Generated %d features per customer\n", ncol(local_features) - 1))
 # cat(sprintf("  Estimated time for all %s customers: %.1f minutes\n",
 #             format(n_customers, big.mark = ","),
@@ -164,7 +164,7 @@ knitr::opts_chunk$set(
 # 
 # cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "secs"))
 # 
-# cat(sprintf("\n✓ Completed in %.1f seconds\n", cloud_time))
+# cat(sprintf("\n[OK] Completed in %.1f seconds\n", cloud_time))
 # 
 # # Combine results
 # features <- do.call(rbind, results)

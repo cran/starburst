@@ -395,8 +395,8 @@ staRburst.</p>
 tasks never start - Workers = 0 in status - Tasks remain in pending
 state for &gt;5 minutes</p>
 <p><strong>Diagnosis:</strong></p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Check Fargate quota</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>config <span class="ot">&lt;-</span> <span class="fu">get_starburst_config</span>()</span>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Check current configuration and quota</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>config <span class="ot">&lt;-</span> <span class="fu">starburst_status</span>()</span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>sts <span class="ot">&lt;-</span> paws.security.identity<span class="sc">::</span><span class="fu">sts</span>()</span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>account <span class="ot">&lt;-</span> sts<span class="sc">$</span><span class="fu">get_caller_identity</span>()</span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a></span>
@@ -535,8 +535,9 @@ images</p>
 <span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a><span class="co"># - IAM: PassRole (to pass ECS task role)</span></span>
 <span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a></span>
 <span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a><span class="co"># Solution 3: Run starburst_setup() to create all resources</span></span>
-<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a><span class="fu">library</span>(starburst)</span>
-<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a><span class="fu">starburst_setup</span>(<span class="at">bucket =</span> <span class="st">&quot;my-starburst-bucket&quot;</span>)</span></code></pre></div>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a><span class="co"># (the S3 bucket, ECR repo, ECS cluster, etc. are created and named for you)</span></span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a><span class="fu">library</span>(starburst)</span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a><span class="fu">starburst_setup</span>()</span></code></pre></div>
 </div>
 <div id="issue-4-high-costs-runaway-workers" class="section level3">
 <h3>Issue 4: High Costs / Runaway Workers</h3>

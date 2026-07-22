@@ -569,14 +569,14 @@ Allocation by asset class:
 <span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a></span>
 <span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a></span>
-<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Average time per scenario: %.3f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a>            local_time <span class="sc">/</span> <span class="fu">length</span>(test_scenarios)))</span>
 <span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for 10,000 scenarios: %.1f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>            local_time <span class="sc">*</span> <span class="dv">10000</span> <span class="sc">/</span> <span class="fu">length</span>(test_scenarios) <span class="sc">/</span> <span class="dv">60</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Running local benchmark (120 scenarios)...
-✓ Completed in 8.4 seconds
+[OK] Completed in 8.4 seconds
   Average time per scenario: 0.070 seconds
   Estimated time for 10,000 scenarios: 11.7 minutes</code></pre>
 <p>For 10,000 scenarios locally: <strong>~12 minutes</strong></p>
@@ -607,35 +607,39 @@ Allocation by asset class:
 <span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a></span>
 <span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a>cloud_start <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
 <span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a></span>
-<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
-<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a>  all_scenarios,</span>
-<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a>  value_portfolio_scenario,</span>
-<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a>  <span class="at">portfolio_data =</span> portfolio,</span>
-<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a>  <span class="at">workers =</span> n_workers,</span>
-<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">2</span>,</span>
-<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;4GB&quot;</span></span>
-<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a>)</span>
-<span id="cb8-32"><a href="#cb8-32" tabindex="-1"></a></span>
-<span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;mins&quot;</span>))</span>
-<span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a></span>
-<span id="cb8-35"><a href="#cb8-35" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✓ Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a><span class="co"># Each scenario is tiny (~1 ms), so submitting 10,145 one-scenario tasks would be</span></span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a><span class="co"># dominated by per-task S3 overhead (see the Workload Shapes guide). Batch into</span></span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a><span class="co"># ~100 tasks, each valuing a chunk of scenarios.</span></span>
+<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a>batches <span class="ot">&lt;-</span> <span class="fu">split</span>(</span>
+<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a>  all_scenarios,</span>
+<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a>  <span class="fu">ceiling</span>(<span class="fu">seq_along</span>(all_scenarios) <span class="sc">/</span> <span class="fu">ceiling</span>(<span class="fu">length</span>(all_scenarios) <span class="sc">/</span> <span class="dv">100</span>))</span>
+<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a>)</span>
+<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(</span>
+<span id="cb8-32"><a href="#cb8-32" tabindex="-1"></a>  batches,</span>
+<span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a>  <span class="cf">function</span>(batch) <span class="fu">lapply</span>(batch, value_portfolio_scenario, <span class="at">portfolio_data =</span> portfolio),</span>
+<span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a>  <span class="at">workers =</span> n_workers,</span>
+<span id="cb8-35"><a href="#cb8-35" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">2</span>,</span>
+<span id="cb8-36"><a href="#cb8-36" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;4GB&quot;</span></span>
+<span id="cb8-37"><a href="#cb8-37" tabindex="-1"></a>)</span>
+<span id="cb8-38"><a href="#cb8-38" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">unlist</span>(results, <span class="at">recursive =</span> <span class="cn">FALSE</span>)  <span class="co"># flatten to one result per scenario</span></span>
+<span id="cb8-39"><a href="#cb8-39" tabindex="-1"></a></span>
+<span id="cb8-40"><a href="#cb8-40" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;mins&quot;</span>))</span>
+<span id="cb8-41"><a href="#cb8-41" tabindex="-1"></a></span>
+<span id="cb8-42"><a href="#cb8-42" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[OK] Completed in %.2f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span></code></pre></div>
+<p><strong>Illustrative output</strong> (times/cost vary — see the
+Workload Shapes and Performance guides for measured numbers):</p>
 <pre><code>Generating scenario sets...
   Stress test scenarios: 100
   Monte Carlo scenarios: 10,000
   Sensitivity scenarios: 45
   Total scenarios: 10,145
 
-🚀 Starting starburst cluster with 50 workers
-💰 Estimated cost: ~$4.00/hour
-📊 Processing 10145 items with 50 workers
-📦 Created 50 chunks (avg 203 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 50 tasks
-⏳ Progress: 50/50 tasks (1.8 minutes elapsed)
-
-✓ Completed in 1.8 minutes
-💰 Actual cost: $0.12</code></pre>
+[Starting] Starting starburst cluster with 50 workers
+[Status] Processing 100 items with 50 workers
+[Starting] Submitting 100 tasks...
+[Wait] Progress: 100/100
+[OK] Completed
+[Cost] Estimated cost: (printed per run)</code></pre>
 </div>
 <div id="risk-metrics-analysis" class="section level2">
 <h2>Risk Metrics Analysis</h2>
@@ -720,7 +724,7 @@ Allocation by asset class:
 <span id="cb10-78"><a href="#cb10-78" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Market Risk Capital Requirement: $%.0f</span><span class="sc">\n</span><span class="st">&quot;</span>, market_risk_capital))</span>
 <span id="cb10-79"><a href="#cb10-79" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Capital as %% of Portfolio: %.2f%%</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb10-80"><a href="#cb10-80" tabindex="-1"></a>            market_risk_capital <span class="sc">/</span> total_portfolio_value <span class="sc">*</span> <span class="dv">100</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Comprehensive Risk Analysis Results ===
 
 === Stress Test Results ===
@@ -759,46 +763,11 @@ Average absolute sensitivity: $89,234
 Market Risk Capital Requirement: $29,629,629
 Capital as % of Portfolio: 47.44%</code></pre>
 </div>
-<div id="performance-comparison" class="section level2">
-<h2>Performance Comparison</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Method</th>
-<th>Scenarios</th>
-<th>Time</th>
-<th>Cost</th>
-<th>Speedup</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Local</td>
-<td>120</td>
-<td>8.4 sec</td>
-<td>$0</td>
-<td>-</td>
-</tr>
-<tr class="even">
-<td>Local (est.)</td>
-<td>10,145</td>
-<td>11.9 min</td>
-<td>$0</td>
-<td>1x</td>
-</tr>
-<tr class="odd">
-<td>staRburst</td>
-<td>10,145</td>
-<td>1.8 min</td>
-<td>$0.12</td>
-<td>6.6x</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Key Insights</strong>: - Excellent speedup (6.6x) for risk
-calculations - Enables daily comprehensive risk reporting -
-Cost-effective even for large portfolios - Can scale to 100,000+
-scenarios for more precision</p>
+<div id="performance" class="section level2">
+<h2>Performance</h2>
+<p>For measured performance and when bursting is worth it, see
+<code>vignette(&quot;performance&quot;)</code> and
+<code>vignette(&quot;workload-shapes&quot;)</code>.</p>
 </div>
 <div id="advanced-incremental-risk-analysis" class="section level2">
 <h2>Advanced: Incremental Risk Analysis</h2>

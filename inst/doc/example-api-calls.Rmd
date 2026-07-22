@@ -167,15 +167,15 @@ local_start <- Sys.time()
 local_results <- lapply(head(tickers, 50), fetch_company_data_mock)
 local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 
-cat(sprintf("✓ Completed 50 calls in %.1f seconds\n", local_time))
+cat(sprintf("[OK] Completed 50 calls in %.1f seconds\n", local_time))
 cat(sprintf("  Estimated time for %d: %.1f minutes\n",
             n_companies, local_time * n_companies / 50 / 60))
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
 Fetching data for 1000 companies locally...
-✓ Completed 50 calls in 24.3 seconds
+[OK] Completed 50 calls in 24.3 seconds
   Estimated time for 1000: 8.1 minutes
 ```
 
@@ -183,30 +183,35 @@ Fetching data for 1000 companies locally...
 
 Run all 1,000 API calls in parallel:
 
+Each fetch is short, so submitting 1,000 one-call tasks would be dominated by
+per-task S3 overhead (see the
+[Workload Shapes](https://starburst.ing/articles/workload-shapes.html) guide).
+Instead, batch the tickers into ~100 tasks and have each task fetch its chunk:
+
 ```{r cloud, eval=FALSE}
 cat(sprintf("Fetching data for %d companies on AWS...\n", n_companies))
 
+# ~100 tasks, each fetching a chunk of tickers
+batches <- split(tickers, ceiling(seq_along(tickers) / ceiling(length(tickers) / 100)))
 results <- starburst_map(
-  tickers,
-  fetch_company_data_mock,
+  batches,
+  function(batch) lapply(batch, fetch_company_data_mock),
   workers = 25,
   cpu = 1,
   memory = "2GB"
 )
+results <- unlist(results, recursive = FALSE)  # flatten to 1,000 results
 ```
 
-**Typical output**:
+**Illustrative output** (times/cost vary — see the Workload Shapes and Performance
+guides for measured numbers):
 ```
-🚀 Starting starburst cluster with 25 workers
-💰 Estimated cost: ~$1.00/hour
-📊 Processing 1000 items with 25 workers
-📦 Created 25 chunks (avg 40 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 25 tasks
-⏳ Progress: 25/25 tasks (0.8 minutes elapsed)
-
-✓ Completed in 0.8 minutes
-💰 Actual cost: $0.01
+[Starting] Starting starburst cluster with 25 workers
+[Status] Processing 100 items with 25 workers
+[Starting] Submitting 100 tasks...
+[Wait] Progress: 100/100
+[OK] Completed
+[Cost] Estimated cost: (printed per run)
 ```
 
 ## Results Processing
@@ -272,48 +277,43 @@ cat(sprintf("Range: $%.2fB - $%.2fB\n",
             max(results_df$market_cap, na.rm = TRUE) / 1e9))
 ```
 
-## Performance Comparison
+## Performance
 
-| Method | Workers | Time | Cost | Speedup |
-|--------|---------|------|------|---------|
-| Local | 1 | 8.1 min | $0 | 1x |
-| staRburst | 10 | 2.1 min | $0.004 | 3.9x |
-| staRburst | 25 | 0.8 min | $0.01 | 10.1x |
-| staRburst | 50 | 0.5 min | $0.02 | 16.2x |
-
-**Key Insights**:
-- Excellent scaling for I/O-bound workloads
-- Cost remains minimal even with 50 workers
-- Network latency dominates computation time
-- Automatic retries handle transient failures
+For measured performance and when bursting is worth it, see
+`vignette("performance")` and `vignette("workload-shapes")`.
 
 ## Rate Limiting Considerations
 
 When working with real APIs:
 
-```{r rate-limiting, eval=FALSE}
-# Add jitter to respect rate limits
-fetch_with_rate_limit <- function(ticker, rate_limit = 100) {
-  # Add delay based on rate limit (calls per minute)
-  delay <- 60 / rate_limit + runif(1, 0, 0.1)
-  Sys.sleep(delay)
+Each worker throttles itself **independently**, so the *aggregate* rate is the
+per-worker rate times the number of workers. To respect a global API limit, give
+each worker its share: `per_worker_rate = global_limit / workers`.
 
+```{r rate-limiting, eval=FALSE}
+# per_worker_rate is calls/minute allowed to THIS worker
+fetch_with_rate_limit <- function(ticker, per_worker_rate) {
+  delay <- 60 / per_worker_rate + runif(1, 0, 0.1)
+  Sys.sleep(delay)
   fetch_company_data(ticker)
 }
 
-# Use with staRburst
+global_limit <- 100   # API allows 100 calls/minute total
+workers      <- 10
+per_worker   <- global_limit / workers   # 10 calls/min each
+
 results <- starburst_map(
   tickers,
-  function(x) fetch_with_rate_limit(x, rate_limit = 100),
-  workers = 10  # Adjust workers based on API rate limit
+  function(x) fetch_with_rate_limit(x, per_worker_rate = per_worker),
+  workers = workers
 )
 ```
 
 **Rate limit calculation**:
-- API limit: 100 calls/minute
-- Workers: 10
-- Max throughput: 1000 calls/minute (10 workers × 100 calls/min)
-- Adjust workers to stay under limit
+- API limit: 100 calls/minute (global)
+- Workers: 10 → each worker allowed 100 / 10 = 10 calls/minute
+- Aggregate throughput: 10 workers × 10 calls/min = **100 calls/minute** (at the limit)
+- Rule: `per_worker_rate = global_limit / workers` keeps the fleet under the cap
 
 ## Error Handling Best Practices
 

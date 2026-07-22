@@ -17,20 +17,55 @@ NULL
 #' @param timeout Task timeout in seconds (default: 3600)
 #' @param session_timeout Active timeout in seconds (default: 3600)
 #' @param absolute_timeout Maximum session lifetime in seconds (default: 86400)
-#' @param launch_type "FARGATE" or "EC2" (default: "FARGATE")
-#' @param instance_type EC2 instance type for EC2 launch (default: "c6a.large")
-#' @param use_spot Use spot instances for EC2 (default: FALSE)
+#' @param launch_type "EC2" or "FARGATE" (default: "EC2")
+#' @param instance_type EC2 instance type for EC2 launch (default: "c7g.xlarge")
+#' @param use_spot Use spot instances for EC2 (default: TRUE)
 #' @param warm_pool_timeout EC2 warm pool timeout in seconds (default: 3600)
 #'
-#' @return A StarburstSession object with methods:
-#'   \itemize{
-#'     \item \code{submit(expr, ...)} - Submit a task to the session
-#'     \item \code{status()} - Get progress summary
-#'     \item \code{collect(wait = FALSE)} - Collect completed results
-#'     \item \code{extend(seconds = 3600)} - Extend timeout
-#'     \item \code{cleanup()} - Terminate and cleanup
+#' @return A \code{StarburstSession} object (also carrying \code{$session_id}, the
+#'   handle you pass to \code{\link{starburst_session_attach}}) with methods:
+#'   \describe{
+#'     \item{\code{submit(expr, globals = NULL, packages = NULL)}}{Submit one task
+#'       (a quoted expression). Returns the task id. Call repeatedly to fan out work.}
+#'     \item{\code{status()}}{Return a progress summary (counts of pending / running
+#'       / completed / failed tasks). Safe to call from a fresh R session after
+#'       reattaching.}
+#'     \item{\code{collect(wait = FALSE)}}{Retrieve results, keyed by task id, in
+#'       submission order. With \code{wait = FALSE} returns whatever has finished so
+#'       far; \code{wait = TRUE} blocks until every submitted task is terminal.
+#'       Every terminal task appears: a success carries its return value; a
+#'       \strong{failed} task carries a structured failure
+#'       \code{list(error = TRUE, message = ..., value = NULL, task_id = ...)} so
+#'       failures are visible rather than silently dropped.}
+#'     \item{\code{extend(seconds = 3600)}}{Extend the active/absolute timeout of a
+#'       still-running session.}
+#'     \item{\code{cleanup(stop_workers = TRUE, force = FALSE)}}{Stop the session's
+#'       workers and mark it terminated. By default \strong{S3 objects are
+#'       preserved} (so you can still inspect/collect); pass \code{force = TRUE} to
+#'       also delete the session's S3 task/result objects. Otherwise the session
+#'       self-terminates at \code{absolute_timeout}.}
 #'   }
 #'
+#' @section Lifecycle:
+#' \code{starburst_session()} launches workers immediately and returns a handle.
+#' Submit tasks, then either poll \code{status()}/\code{collect()} in the same
+#' session, or record \code{session$session_id}, close R, and later
+#' \code{\link{starburst_session_attach}(session_id)} to reconnect and collect.
+#' A session ends when you call \code{cleanup()}, when \code{session_timeout}
+#' elapses with no activity, or at \code{absolute_timeout} — whichever comes first.
+#'
+#' @section Failure behavior:
+#' A failed task is recorded (surfaced via \code{status()}) and does not abort the
+#' others; \code{collect()} returns it as a structured failure entry
+#' (\code{error = TRUE} with a \code{message}) alongside the successful results,
+#' rather than dropping it or raising. If the client
+#' dies, workers keep running against S3 until a timeout, which is what makes
+#' reattaching possible. \code{cleanup()} is the only thing that frees resources
+#' early — sessions do not auto-clean on garbage collection.
+#'
+#' @seealso \code{\link{starburst_session_attach}},
+#'   \code{\link{starburst_list_sessions}}; \code{\link{starburst_map}} for
+#'   ephemeral (non-detached) fan-out.
 #' @export
 #'
 #' @examples
@@ -411,7 +446,11 @@ collect_session_results <- function(session, wait, timeout) {
       bucket = backend$bucket
     )
 
-    # Collect completed results that we haven't collected yet
+    # Collect terminal (completed OR failed) results we haven't collected yet.
+    # Every submitted task ends up in the returned list keyed by task id: a
+    # successful task carries its value; a failed task carries a structured
+    # failure (error = TRUE, message, task_id) so failures are visible rather
+    # than silently dropped.
     for (task_id in names(statuses)) {
       # Skip bootstrap tasks
       if (grepl("^bootstrap-", task_id)) {
@@ -420,12 +459,14 @@ collect_session_results <- function(session, wait, timeout) {
 
       status <- statuses[[task_id]]
 
-      # Skip if not completed or already collected
-      if (status$state != "completed" || task_id %in% names(results)) {
+      # Skip if not terminal yet, or already collected
+      if (!status$state %in% c("completed", "failed") ||
+          task_id %in% names(results)) {
         next
       }
 
-      # Download result from S3
+      # Download the result/error blob from S3 (workers upload an error result
+      # for failed tasks too). Fall back to a structured failure from the status.
       result_key <- sprintf("results/%s.qs", task_id)
       temp_file <- tempfile(fileext = ".qs")
 
@@ -436,11 +477,20 @@ collect_session_results <- function(session, wait, timeout) {
           Filename = temp_file
         )
 
-        result_data <- qs2::qs_read(temp_file)
-        results[[task_id]] <- result_data
+        results[[task_id]] <- qs2::qs_read(temp_file)
       }, error = function(e) {
-        cat_warn(sprintf("Failed to download result for task %s: %s\n",
-                        task_id, e$message))
+        if (identical(status$state, "failed")) {
+          # No or unreadable error blob: synthesize a structured failure.
+          results[[task_id]] <<- list(
+            error = TRUE,
+            message = status$error %||% "task failed (no error detail available)",
+            value = NULL,
+            task_id = task_id
+          )
+        } else {
+          cat_warn(sprintf("Failed to download result for task %s: %s\n",
+                          task_id, e$message))
+        }
       }, finally = {
         unlink(temp_file)
       })
@@ -451,8 +501,13 @@ collect_session_results <- function(session, wait, timeout) {
       break
     }
 
-    # Check if all tasks are completed
-    all_completed <- all(vapply(statuses, function(s) {
+    # Check if all *user* tasks are completed. Bootstrap tasks
+    # (bootstrap-session-...) are the long-lived workers polling the queue; they
+    # stay "claimed"/"running" for the life of the session, so they must be
+    # excluded here — otherwise all_completed is never TRUE and a wait=TRUE
+    # collect hangs until the timeout even though every real result has landed.
+    user_statuses <- statuses[!grepl("^bootstrap-", names(statuses))]
+    all_completed <- length(user_statuses) > 0 && all(vapply(user_statuses, function(s) {
       s$state %in% c("completed", "failed")
     }, FUN.VALUE = logical(1)))
 

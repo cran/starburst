@@ -138,31 +138,37 @@ knitr::opts_chunk$set(
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "mins"))
 # 
-# cat(sprintf("✓ Completed in %.2f minutes\n", local_time))
+# cat(sprintf("[OK] Completed in %.2f minutes\n", local_time))
 # cat(sprintf("  Average time per combination: %.1f seconds\n",
 #             local_time * 60 / nrow(sample_params)))
 # cat(sprintf("  Estimated time for full grid (%d combinations): %.1f minutes\n",
 #             nrow(param_grid), local_time * nrow(param_grid) / nrow(sample_params)))
 
 ## ----cloud, eval=FALSE--------------------------------------------------------
-# n_workers <- 27  # Process ~3 parameter combinations per worker
+# n_workers <- 27
 # 
 # cat(sprintf("Running grid search (%d combinations) on %d workers...\n",
 #             nrow(param_grid), n_workers))
 # 
 # cloud_start <- Sys.time()
 # 
+# # Batch the parameter rows into ~100 tasks, each evaluating a chunk
+# idx <- 1:nrow(param_grid)
+# batches <- split(idx, ceiling(seq_along(idx) / ceiling(length(idx) / 100)))
 # results <- starburst_map(
-#   1:nrow(param_grid),
-#   function(i) cv_evaluate(param_grid[i, ], X_train, y_train, n_folds = 5),
+#   batches,
+#   function(chunk) lapply(chunk, function(i) {
+#     cv_evaluate(param_grid[i, ], X_train, y_train, n_folds = 5)
+#   }),
 #   workers = n_workers,
 #   cpu = 2,
 #   memory = "4GB"
 # )
+# results <- unlist(results, recursive = FALSE)  # flatten to one result per combination
 # 
 # cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "mins"))
 # 
-# cat(sprintf("\n✓ Completed in %.2f minutes\n", cloud_time))
+# cat(sprintf("\n[OK] Completed in %.2f minutes\n", cloud_time))
 
 ## ----analysis, eval=FALSE-----------------------------------------------------
 # # Extract results

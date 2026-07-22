@@ -184,7 +184,7 @@ knitr::opts_chunk$set(
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 # 
-# cat(sprintf("✓ Completed in %.2f seconds\n", local_time))
+# cat(sprintf("[OK] Completed in %.2f seconds\n", local_time))
 # cat(sprintf("  Average time per scenario: %.3f seconds\n",
 #             local_time / length(test_scenarios)))
 # cat(sprintf("  Estimated time for 10,000 scenarios: %.1f minutes\n",
@@ -214,18 +214,25 @@ knitr::opts_chunk$set(
 # 
 # cloud_start <- Sys.time()
 # 
-# results <- starburst_map(
+# # Each scenario is tiny (~1 ms), so submitting 10,145 one-scenario tasks would be
+# # dominated by per-task S3 overhead (see the Workload Shapes guide). Batch into
+# # ~100 tasks, each valuing a chunk of scenarios.
+# batches <- split(
 #   all_scenarios,
-#   value_portfolio_scenario,
-#   portfolio_data = portfolio,
+#   ceiling(seq_along(all_scenarios) / ceiling(length(all_scenarios) / 100))
+# )
+# results <- starburst_map(
+#   batches,
+#   function(batch) lapply(batch, value_portfolio_scenario, portfolio_data = portfolio),
 #   workers = n_workers,
 #   cpu = 2,
 #   memory = "4GB"
 # )
+# results <- unlist(results, recursive = FALSE)  # flatten to one result per scenario
 # 
 # cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "mins"))
 # 
-# cat(sprintf("\n✓ Completed in %.2f minutes\n", cloud_time))
+# cat(sprintf("\n[OK] Completed in %.2f minutes\n", cloud_time))
 
 ## ----analysis, eval=FALSE-----------------------------------------------------
 # # Extract P&L from all scenarios

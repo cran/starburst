@@ -11,6 +11,19 @@
 #'   This prevents surprise costs if you stop using staRburst.
 #'   Recommended: 30 days for regular users, 7 days for occasional users.
 #'   When images are deleted, they will be rebuilt on next use (adds 3-5 min).
+#' @param build_image Build the worker environment image during setup (default: TRUE).
+#'   Set to FALSE to provision AWS resources (S3/ECR/ECS/VPC), write config, and
+#'   check quotas without triggering the multi-minute Docker image build. The
+#'   image is then built lazily on first worker launch via
+#'   \code{ensure_environment()}. Useful for CI / connectivity checks.
+#' @param setup_ec2 Provision the EC2 capacity provider and Auto Scaling Group for
+#'   the default instance type during setup (default: TRUE). This is what makes the
+#'   default EC2 backend work out of the box — without it, the first
+#'   \code{starburst_map()}/\code{plan(starburst)} run on EC2 would fail because no
+#'   capacity provider exists. It creates infrastructure at \code{DesiredCapacity = 0}
+#'   (no billable instances are launched during setup). Set to FALSE if you only use
+#'   the Fargate backend, which needs no capacity provider. Provision additional
+#'   instance types later with \code{\link{starburst_setup_ec2}}.
 #'
 #' @return Invisibly returns the configuration list.
 #' @export
@@ -26,9 +39,14 @@
 #'
 #'   # Use private base images with 7-day cleanup
 #'   starburst_setup(use_public_base = FALSE, ecr_image_ttl_days = 7)
+#'
+#'   # Provision resources without building the image (fast; CI / connectivity checks)
+#'   starburst_setup(build_image = FALSE)
 #' }
 #' }
-starburst_setup <- function(region = "us-east-1", force = FALSE, use_public_base = TRUE, ecr_image_ttl_days = NULL) {
+starburst_setup <- function(region = "us-east-1", force = FALSE, use_public_base = TRUE,
+                            ecr_image_ttl_days = NULL, build_image = TRUE,
+                            setup_ec2 = TRUE) {
 
   cat_header("[Start] staRburst Setup\n")
 
@@ -42,8 +60,12 @@ starburst_setup <- function(region = "us-east-1", force = FALSE, use_public_base
   cat_info("\nThis will configure AWS resources for staRburst:\n")
   cat_info("  * S3 bucket for data transfer\n")
   cat_info("  * ECR repository for Docker images\n")
-  cat_info("  * ECS cluster for Fargate tasks\n")
+  cat_info("  * ECS cluster (used by both EC2 and Fargate backends)\n")
   cat_info("  * VPC resources (subnets, security groups)\n")
+  if (setup_ec2) {
+    cat_info("  * EC2 capacity provider + Auto Scaling Group for the default\n")
+    cat_info("    instance type (so the default EC2 backend works immediately)\n")
+  }
 
   if (interactive()) {
     response <- readline("\nContinue? [y/n]: ")
@@ -120,6 +142,23 @@ starburst_setup <- function(region = "us-east-1", force = FALSE, use_public_base
 
   save_config(config)
 
+  # Provision the default EC2 capacity provider + ASG so the default EC2 backend
+  # works out of the box. Without this, the first EC2 run fails: start_warm_pool()
+  # scales a named ASG that only setup_ec2_capacity_provider() creates. This makes
+  # infrastructure at DesiredCapacity = 0 — no billable instances launched here.
+  if (setup_ec2) {
+    cat_info("\n[EC2] Provisioning default EC2 capacity provider (c7g.xlarge)...\n")
+    cat_info("   * Creates a Launch Template + Auto Scaling Group at 0 instances\n")
+    cat_info("   * No instances launch until you run a job (no cost from setup)\n")
+    tryCatch({
+      starburst_setup_ec2(region = region, instance_types = "c7g.xlarge",
+                          force = TRUE)
+    }, error = function(e) {
+      cat_warn(sprintf("[!] EC2 capacity provisioning failed: %s\n", e$message))
+      cat_warn("    Run starburst_setup_ec2() manually, or use the Fargate backend.\n")
+    })
+  }
+
   # Check quotas proactively
   cat_info("\n[Status] Checking Fargate quotas...\n")
   quota_info <- check_fargate_quota(region)
@@ -152,19 +191,26 @@ starburst_setup <- function(region = "us-east-1", force = FALSE, use_public_base
     cat_success(sprintf("[OK] Quota is sufficient (%d vCPUs)\n", quota_info$limit))
   }
 
-  # Build initial environment
-  cat_info("\n[Build] Building initial R environment...\n")
-  cat_info("This may take 5-10 minutes on first run\n")
+  # Build initial environment (skippable: image is built lazily on first launch)
+  if (build_image) {
+    cat_info("\n[Build] Building initial R environment...\n")
+    cat_info("This may take 5-10 minutes on first run\n")
 
-  env_hash <- build_initial_environment(region)
-  cat_success("[OK] Environment built and cached\n")
+    env_hash <- build_initial_environment(region)
+    cat_success("[OK] Environment built and cached\n")
+  } else {
+    cat_info("\n[Build] Skipping environment image build (build_image = FALSE)\n")
+    cat_info("  The worker image will be built automatically on first launch.\n")
+  }
 
   # Final message
   cat_success("\n[OK] staRburst setup complete!\n")
   cat_info("\nQuick start:\n")
+  cat_info("  results <- starburst_map(inputs, expensive_function, workers = 50)\n")
+  cat_info("\nAlready using future/furrr? Set the plan instead:\n")
   cat_info("  library(furrr)\n")
-  cat_info("  plan(future_starburst, workers = 50)\n")
-  cat_info("  results <- future_map(data, expensive_function)\n")
+  cat_info("  plan(starburst, workers = 50)\n")
+  cat_info("  results <- future_map(inputs, expensive_function)\n")
 
   invisible(TRUE)
 }
@@ -221,6 +267,20 @@ starburst_is_configured <- function() {
   check_aws_credentials()
 }
 
+#' Resolve whether to auto-clean S3 files after a job
+#'
+#' Order: the \code{starburst.cleanup_s3} option (explicit runtime override), then
+#' the persisted \code{auto_cleanup_s3} config (set via \code{\link{starburst_config}}),
+#' then default \code{TRUE}.
+#' @keywords internal
+should_cleanup_s3 <- function() {
+  opt <- getOption("starburst.cleanup_s3", NULL)
+  if (!is.null(opt)) return(isTRUE(opt))
+  cfg <- tryCatch(get_starburst_config()$auto_cleanup_s3, error = function(e) NULL)
+  if (!is.null(cfg)) return(isTRUE(cfg))
+  TRUE
+}
+
 #' Get configuration directory
 #'
 #' @keywords internal
@@ -238,24 +298,52 @@ config_path <- function() {
 
 #' Configure staRburst options
 #'
-#' @param max_cost_per_job Maximum cost per job in dollars
-#' @param cost_alert_threshold Cost threshold for alerts
-#' @param auto_cleanup_s3 Automatically clean up S3 files after completion
-#' @param ... Additional configuration options
+#' Reads and updates the persisted staRburst configuration. Call with no arguments
+#' to leave settings unchanged (it still returns the current config invisibly); pass
+#' one or more of the arguments below to update them.
+#'
+#' @param max_hourly_cost Maximum estimated **hourly** cost (USD/hour) for a job.
+#'   Jobs whose estimated hourly rate exceeds this error before launching. This is a
+#'   rate limit, not a total-job-cost cap. \code{NULL} leaves it unchanged.
+#' @param cost_alert_threshold Estimated **hourly** cost (USD/hour) at which a
+#'   warning is emitted. \code{NULL} leaves it unchanged.
+#' @param auto_cleanup_s3 Logical; automatically delete a job's S3 task/result
+#'   objects after completion. \code{NULL} leaves it unchanged.
+#' @param ... Additional user-settable keys merged into the config. Recognized keys:
+#'   \describe{
+#'     \item{\code{use_public_base}}{Logical; pull the public base image instead of
+#'       building a private one (see \code{\link{starburst_setup}}).}
+#'     \item{\code{ecr_image_ttl_days}}{Integer; lifecycle age at which cached ECR
+#'       images are expired.}
+#'   }
+#'
+#' @details
+#' Other keys in the stored config are **infrastructure-managed** — written by
+#' \code{\link{starburst_setup}}/\code{\link{starburst_setup_ec2}} and not intended
+#' to be set by hand: \code{region}, \code{bucket}, \code{cluster},
+#' \code{ecr_repository}, \code{aws_account_id}, \code{execution_role_arn},
+#' \code{task_role_arn}, \code{subnets}, and \code{security_groups}. Use
+#' \code{\link{starburst_status}} to inspect the effective configuration read-only.
 #'
 #' @return Invisibly returns the updated configuration list.
+#' @seealso \code{\link{starburst_status}} to view config without changing it;
+#'   \code{\link{starburst_setup}} for initial provisioning.
 #' @export
 #'
 #' @examples
 #' \donttest{
 #' if (starburst_is_configured()) {
+#'   # Update cost guardrails (both are hourly rates, USD/hour)
 #'   starburst_config(
-#'     max_cost_per_job = 10,
+#'     max_hourly_cost = 10,
 #'     cost_alert_threshold = 5
 #'   )
+#'
+#'   # Read the current config without changing anything
+#'   cfg <- starburst_config()
 #' }
 #' }
-starburst_config <- function(max_cost_per_job = NULL,
+starburst_config <- function(max_hourly_cost = NULL,
                              cost_alert_threshold = NULL,
                              auto_cleanup_s3 = NULL,
                              ...) {
@@ -263,8 +351,8 @@ starburst_config <- function(max_cost_per_job = NULL,
   config <- get_starburst_config()
 
   # Update config
-  if (!is.null(max_cost_per_job)) {
-    config$max_cost_per_job <- max_cost_per_job
+  if (!is.null(max_hourly_cost)) {
+    config$max_hourly_cost <- max_hourly_cost
   }
 
   if (!is.null(cost_alert_threshold)) {

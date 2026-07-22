@@ -8,9 +8,11 @@ starburst_cluster(
   workers = 10,
   cpu = 4,
   memory = "8GB",
-  platform = "X86_64",
   region = NULL,
-  timeout = 3600
+  timeout = 3600,
+  launch_type = "EC2",
+  instance_type = "c7g.xlarge",
+  use_spot = TRUE
 )
 }
 \arguments{
@@ -20,23 +22,34 @@ starburst_cluster(
 
 \item{memory}{Memory per worker}
 
-\item{platform}{CPU architecture (X86_64 or ARM64)}
-
 \item{region}{AWS region}
 
 \item{timeout}{Maximum runtime in seconds}
+
+\item{launch_type}{Compute backend: "EC2" (default) or "FARGATE"}
+
+\item{instance_type}{EC2 instance type when \code{launch_type = "EC2"}
+(default: "c7g.xlarge"). Worker CPU architecture follows the instance type
+(Graviton \code{*g.*} = ARM64, Intel/AMD = x86_64); there is no separate
+platform argument.}
+
+\item{use_spot}{Use EC2 Spot instances for cost savings (default: TRUE)}
 }
 \value{
 A starburst_cluster object
 }
 \description{
-Creates a cluster object for managing AWS Fargate workers using Future backend
+Creates a cluster object for managing AWS workers (EC2 by default, or Fargate)
+using the staRburst Future backend.
 }
 \examples{
 \donttest{
 if (starburst_is_configured()) {
   cluster <- starburst_cluster(workers = 20)
   results <- cluster$map(data, function(x) x * 2)
+
+  # Fargate backend instead of the EC2 default
+  fg <- starburst_cluster(workers = 20, launch_type = "FARGATE")
 }
 }
 }

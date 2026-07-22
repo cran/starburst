@@ -183,7 +183,7 @@ knitr::opts_chunk$set(
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 # 
-# cat(sprintf("✓ Completed in %.1f seconds\n", local_time))
+# cat(sprintf("[OK] Completed in %.1f seconds\n", local_time))
 # cat(sprintf("  Average: %.1f seconds per report\n", local_time / 5))
 # cat(sprintf("  Estimated time for %d reports: %.1f minutes\n\n",
 #             n_customers, (local_time / 5 * n_customers) / 60))

@@ -242,16 +242,16 @@ local_metrics <- do.call(rbind, local_results)
 
 local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
 
-cat(sprintf("✓ Completed in %.2f seconds\n", local_time))
+cat(sprintf("[OK] Completed in %.2f seconds\n", local_time))
 cat(sprintf("  Processed %d stores\n", nrow(local_metrics)))
 cat(sprintf("  Estimated time for all %d regions: %.1f seconds\n",
             nrow(regions), local_time * (nrow(regions) / length(test_regions))))
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
 Analyzing 3 regions locally...
-✓ Completed in 4.5 seconds
+[OK] Completed in 4.5 seconds
   Processed 15 stores
   Estimated time for all 20 regions: 30.0 seconds
 ```
@@ -282,24 +282,20 @@ results <- starburst_map(
 
 cloud_time <- as.numeric(difftime(Sys.time(), cloud_start, units = "secs"))
 
-cat(sprintf("\n✓ Completed in %.1f seconds\n", cloud_time))
+cat(sprintf("\n[OK] Completed in %.1f seconds\n", cloud_time))
 
 # Combine results
 spatial_metrics <- do.call(rbind, results)
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
-🚀 Starting starburst cluster with 20 workers
-💰 Estimated cost: ~$1.60/hour
-📊 Processing 20 items with 20 workers
-📦 Created 20 chunks (avg 1 region per chunk)
-🚀 Submitting tasks...
-✓ Submitted 20 tasks
-⏳ Progress: 20/20 tasks (4.8 seconds elapsed)
-
-✓ Completed in 4.8 seconds
-💰 Actual cost: $0.002
+[Starting] Starting starburst cluster with 20 workers
+[Status] Processing 20 items with 20 workers
+[Starting] Submitting 20 tasks...
+[Wait] Progress: 20/20 (4.8s)
+[OK] Completed in 4.8 seconds
+[Cost] Estimated cost: $0.002
 ```
 
 ## Results Analysis
@@ -380,7 +376,7 @@ for (i in 1:min(5, nrow(region_summary))) {
 }
 ```
 
-**Typical output**:
+**Illustrative output**:
 ```
 === Geospatial Analysis Results ===
 
@@ -420,17 +416,33 @@ Challenged stores (high competition, low potential): 8
 
 ## Performance Comparison
 
-| Method | Regions | Time | Cost | Speedup |
-|--------|---------|------|------|---------|
-| Local | 3 | 4.5 sec | $0 | - |
-| Local (est.) | 20 | 30 sec | $0 | 1x |
-| staRburst | 20 | 4.8 sec | $0.002 | 6.3x |
+These are **real measured numbers** from `bench/benchmark.R` (see `bench/README.md`),
+not illustrations — a cold run of 20 per-region terrain tasks on live AWS:
+
+| Phase | Time | Notes |
+|-------|------|-------|
+| Local (sequential) | 0.1 s | 20 tasks on an Apple M4 Pro (12-core) — this workload is tiny |
+| Cloud: startup | 74.7 s | one-time: worker provision + image pull |
+| Cloud: compute + collect | 27.9 s | submit → run on 20 workers → collect |
+| **Cloud total (cold)** | **102.6 s** | startup + compute+collect |
+| Est. cost | $0.03 | 20× c7i.xlarge Spot |
+
+*(staRburst 0.3.9, us-east-1, EC2 c7i.xlarge Spot, 20 workers, cold start; sequential
+baseline on an Apple M4 Pro (Mac16,11, 12-core, 48 GB, R 4.6.1), 2026-07-21.)*
+
+> **This is the honest result, and it's a "don't burst this" case.** The cloud total
+> (102.6 s) is far *slower* than local (0.1 s): the workload is seconds of compute, so
+> the ~75 s of fixed startup dominates and there is nothing to amortize it against.
+> Cloud bursting wins only when per-task work is **minutes** and there are many tasks
+> — then compute+collect dwarfs startup. This example exists to show the mechanics;
+> see `vignette("performance")` for when the cloud actually pays off. Regenerate this
+> table for your own workload/region with `bench/benchmark.R`.
 
 **Key Insights**:
-- Excellent parallelization for spatial operations
+- Excellent parallelization for spatial operations once workers are warm
 - Near-linear scaling across regions
-- Minimal cost even with complex calculations
-- Can easily scale to 100+ regions
+- Minimal per-task cost even with complex calculations
+- Scales to 100+ regions, where startup overhead is amortized away
 
 ## Advanced: Delivery Zone Optimization
 

@@ -500,14 +500,14 @@ Date range: 2023-01-01 to 2023-12-31</code></pre>
 <span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a></span>
 <span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.2f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Generated %d features per customer</span><span class="sc">\n</span><span class="st">&quot;</span>, <span class="fu">ncol</span>(local_features) <span class="sc">-</span> <span class="dv">1</span>))</span>
 <span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for all %s customers: %.1f minutes</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
 <span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>            <span class="fu">format</span>(n_customers, <span class="at">big.mark =</span> <span class="st">&quot;,&quot;</span>),</span>
 <span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>            local_time <span class="sc">*</span> (n_customers <span class="sc">/</span> <span class="dv">500</span>) <span class="sc">/</span> <span class="dv">60</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Processing features for 500 customers locally...
-✓ Completed in 3.8 seconds
+[OK] Completed in 3.8 seconds
   Generated 15 features per customer
   Estimated time for all 5,000 customers: 38.0 seconds</code></pre>
 <p>For all 5,000 customers locally: <strong>~38 seconds</strong></p>
@@ -542,21 +542,17 @@ Date range: 2023-01-01 to 2023-12-31</code></pre>
 <span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a></span>
 <span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a>cloud_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), cloud_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb7-27"><a href="#cb7-27" tabindex="-1"></a></span>
-<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">✓ Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span>
+<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">[OK] Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, cloud_time))</span>
 <span id="cb7-29"><a href="#cb7-29" tabindex="-1"></a></span>
 <span id="cb7-30"><a href="#cb7-30" tabindex="-1"></a><span class="co"># Combine results</span></span>
 <span id="cb7-31"><a href="#cb7-31" tabindex="-1"></a>features <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, results)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 20 workers
-💰 Estimated cost: ~$1.60/hour
-📊 Processing 20 items with 20 workers
-📦 Created 20 chunks (avg 250 customers per chunk)
-🚀 Submitting tasks...
-✓ Submitted 20 tasks
-⏳ Progress: 20/20 tasks (6.2 seconds elapsed)
-
-✓ Completed in 6.2 seconds
-💰 Actual cost: $0.003</code></pre>
+<p><strong>Illustrative output</strong>:</p>
+<pre><code>[Starting] Starting starburst cluster with 20 workers
+[Status] Processing 20 items with 20 workers
+[Starting] Submitting 20 tasks...
+[Wait] Progress: 20/20 (6.2s)
+[OK] Completed in 6.2 seconds
+[Cost] Estimated cost: $0.003</code></pre>
 </div>
 <div id="results-analysis" class="section level2">
 <h2>Results Analysis</h2>
@@ -596,7 +592,7 @@ Date range: 2023-01-01 to 2023-12-31</code></pre>
 <span id="cb9-33"><a href="#cb9-33" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Average total spend: $%.2f</span><span class="sc">\n</span><span class="st">&quot;</span>, <span class="fu">mean</span>(high_value<span class="sc">$</span>total_spend)))</span>
 <span id="cb9-34"><a href="#cb9-34" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Average transactions: %.1f</span><span class="sc">\n</span><span class="st">&quot;</span>, <span class="fu">mean</span>(high_value<span class="sc">$</span>total_transactions)))</span>
 <span id="cb9-35"><a href="#cb9-35" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Average online rate: %.1f%%</span><span class="sc">\n</span><span class="st">&quot;</span>, <span class="fu">mean</span>(high_value<span class="sc">$</span>online_pct)))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Feature Engineering Results ===
 
 Total customers processed: 5,000
@@ -637,9 +633,8 @@ Average online rate: 28.9%</code></pre>
 <tr class="header">
 <th>Method</th>
 <th>Customers</th>
-<th>Time</th>
+<th>Compute time</th>
 <th>Cost</th>
-<th>Speedup</th>
 </tr>
 </thead>
 <tbody>
@@ -648,28 +643,34 @@ Average online rate: 28.9%</code></pre>
 <td>500</td>
 <td>3.8 sec</td>
 <td>$0</td>
-<td>-</td>
 </tr>
 <tr class="even">
 <td>Local (est.)</td>
 <td>5,000</td>
 <td>38 sec</td>
 <td>$0</td>
-<td>1x</td>
 </tr>
 <tr class="odd">
 <td>staRburst</td>
 <td>5,000</td>
-<td>6.2 sec</td>
+<td>6.2 sec (compute only)</td>
 <td>$0.003</td>
-<td>6.1x</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Key Insights</strong>: - Excellent parallelization efficiency
-(6x speedup) - Minimal cost for significant time savings - Scales well
-to larger datasets (100K+ customers) - Can process 100 customers/second
-with 20 workers</p>
+<blockquote>
+<p><strong>Reading these numbers honestly:</strong> the staRburst row is
+<em>compute time only</em> on a warm pool and excludes the one-time
+startup (~2 minutes) and image pull. For a job that finishes in ~38
+seconds locally, that startup makes local the faster choice — these
+figures are illustrative, not a net-win claim. The payoff comes at scale
+(100K+ customers or heavier per-record work). See
+<code>vignette(&quot;performance&quot;)</code>.</p>
+</blockquote>
+<p><strong>Key Insights</strong>: - Feature engineering parallelizes
+near-linearly once workers are warm - Minimal per-task cost - The win is
+at scale, where startup overhead is amortized away - Can process 100
+customers/second with 20 workers</p>
 </div>
 <div id="advanced-adding-ml-ready-features" class="section level2">
 <h2>Advanced: Adding ML-Ready Features</h2>

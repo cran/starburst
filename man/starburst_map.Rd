@@ -2,7 +2,7 @@
 % Please edit documentation in R/starburst-map.R
 \name{starburst_map}
 \alias{starburst_map}
-\title{Map Function Over Data Using AWS Fargate}
+\title{Map a Function Over Data on AWS Workers}
 \usage{
 starburst_map(
   .x,
@@ -10,9 +10,11 @@ starburst_map(
   workers = 10,
   cpu = 4,
   memory = "8GB",
-  platform = "X86_64",
   region = NULL,
   timeout = 3600,
+  launch_type = "EC2",
+  instance_type = "c7g.xlarge",
+  use_spot = TRUE,
   .progress = TRUE,
   ...
 )
@@ -28,11 +30,18 @@ starburst_map(
 
 \item{memory}{Memory per worker (e.g., 8GB)}
 
-\item{platform}{CPU architecture (X86_64 or ARM64)}
-
 \item{region}{AWS region}
 
 \item{timeout}{Maximum runtime in seconds per task}
+
+\item{launch_type}{Compute backend: "EC2" (default) or "FARGATE"}
+
+\item{instance_type}{EC2 instance type when \code{launch_type = "EC2"}
+(default: "c7g.xlarge"). The worker CPU architecture follows the instance
+type — Graviton types (e.g. \code{c7g.*}) run ARM64, Intel/AMD types
+(e.g. \code{c7i.*}) run x86_64 — so there is no separate platform argument.}
+
+\item{use_spot}{Use EC2 Spot instances for cost savings (default: TRUE)}
 
 \item{.progress}{Show progress bar (default: TRUE)}
 
@@ -42,7 +51,8 @@ starburst_map(
 A list of results, one per element of .x
 }
 \description{
-Parallel map function that executes on AWS Fargate using the Future backend
+Parallel map function that executes across AWS workers (EC2 by default, or
+Fargate) using the staRburst Future backend.
 }
 \examples{
 \donttest{
@@ -58,6 +68,10 @@ if (starburst_is_configured()) {
     cpu = 4,
     memory = "8GB"
   )
+
+  # Use the Fargate backend instead of the EC2 default
+  results <- starburst_map(1:100, function(x) x^2,
+                           workers = 10, launch_type = "FARGATE")
 }
 }
 }

@@ -68,7 +68,7 @@ knitr::opts_chunk$set(
 # )
 # 
 # local_time <- as.numeric(difftime(Sys.time(), local_start, units = "secs"))
-# cat(sprintf("✓ Completed in %.2f seconds\n\n", local_time))
+# cat(sprintf("[OK] Completed in %.2f seconds\n\n", local_time))
 
 ## ----cloud, eval=FALSE--------------------------------------------------------
 # n_bootstrap <- 10000
@@ -109,10 +109,10 @@ knitr::opts_chunk$set(
 # 
 # # Statistical significance
 # if (ci_95[1] > 0) {
-#   cat("\n✓ Result is statistically significant at 95% confidence level\n")
+#   cat("\n[OK] Result is statistically significant at 95% confidence level\n")
 #   cat("  (95% CI does not include zero)\n")
 # } else {
-#   cat("\n✗ Result is NOT statistically significant at 95% confidence level\n")
+#   cat("\n[X] Result is NOT statistically significant at 95% confidence level\n")
 #   cat("  (95% CI includes zero)\n")
 # }
 # 

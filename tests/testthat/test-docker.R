@@ -138,3 +138,143 @@ test_that("ensure_environment builds image if not exists", {
 
   expect_true(build_called)
 })
+
+test_that("ensure_buildx_builder uses existing builder without creating", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  calls <- list()
+  mockery::stub(ensure_buildx_builder, "safe_system",
+    function(command, args, ...) {
+      calls[[length(calls) + 1]] <<- args
+      # inspect succeeds -> builder already exists
+      invisible(list(status = 0))
+    })
+
+  result <- ensure_buildx_builder("starburst-builder")
+
+  expect_true(result)
+  # Exactly one call, and it is an inspect (no create)
+  expect_length(calls, 1)
+  expect_true(all(c("buildx", "inspect") %in% calls[[1]]))
+  expect_false(any(vapply(calls, function(a) "create" %in% a, logical(1))))
+})
+
+test_that("ensure_buildx_builder creates builder when missing", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  calls <- list()
+  mockery::stub(ensure_buildx_builder, "safe_system",
+    function(command, args, ...) {
+      calls[[length(calls) + 1]] <<- args
+      # The first call is the existence probe (inspect) -> fail = missing.
+      # Subsequent calls (create, confirming inspect) succeed.
+      is_first <- length(calls) == 1
+      if (is_first && "inspect" %in% args) {
+        stop("no builder named starburst-builder")
+      }
+      invisible(list(status = 0))
+    })
+
+  result <- ensure_buildx_builder("starburst-builder")
+
+  expect_true(result)
+  # Must have attempted a create with the docker-container driver
+  create_call <- Filter(function(a) "create" %in% a, calls)
+  expect_length(create_call, 1)
+  expect_true(all(c("--driver", "docker-container", "--bootstrap")
+                  %in% create_call[[1]]))
+  expect_true(all(c("--name", "starburst-builder") %in% create_call[[1]]))
+
+  # After create, the builder must be explicitly selected so a later
+  # `buildx build --builder starburst-builder` resolves (GitHub #30).
+  use_call <- Filter(function(a) "use" %in% a, calls)
+  expect_length(use_call, 1)
+  expect_true("starburst-builder" %in% use_call[[1]])
+})
+
+test_that("ensure_buildx_builder returns FALSE when create fails", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  mockery::stub(ensure_buildx_builder, "safe_system",
+    function(command, args, ...) {
+      # Both the existence probe and the create attempt fail
+      stop("buildx error")
+    })
+
+  expect_false(ensure_buildx_builder("starburst-builder"))
+})
+
+test_that("build_environment_image aborts when builder is unusable", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  # Docker --version check passes; buildx build must never be reached.
+  mockery::stub(build_environment_image, "safe_system",
+    function(command, args, ...) {
+      if (any(grepl("--version", args))) {
+        return(list(status = 0, stdout = "Docker version 20.10.0"))
+      }
+      if (any(args == "build")) stop("buildx build must not be called")
+      list(status = 0)
+    })
+  mockery::stub(build_environment_image, "get_starburst_config",
+                function() list(aws_account_id = "123456789012"))
+  mockery::stub(build_environment_image, "ensure_base_image",
+                function(...) "mock-base-image:latest")
+  mockery::stub(build_environment_image, "file.exists", function(path) TRUE)
+  mockery::stub(build_environment_image, "jsonlite::fromJSON",
+                function(...) list(Packages = list()))
+  mockery::stub(build_environment_image, "jsonlite::write_json", function(...) invisible())
+  mockery::stub(build_environment_image, "file.copy", function(...) TRUE)
+  mockery::stub(build_environment_image, "readLines", function(...) "FROM {{BASE_IMAGE}}")
+  mockery::stub(build_environment_image, "writeLines", function(...) invisible())
+  mockery::stub(build_environment_image, "get_ecr_client",
+                function(...) list(get_authorization_token = function()
+                  list(authorizationData = list(list(
+                    authorizationToken = base64enc::base64encode(charToRaw("AWS:pw")),
+                    proxyEndpoint = "https://example")))))
+  # Builder cannot be made usable
+  mockery::stub(build_environment_image, "ensure_buildx_builder", function(...) FALSE)
+
+  expect_error(
+    build_environment_image("test-tag", "us-east-1"),
+    "starburst-builder"
+  )
+})
+
+# Helper: stub starburst_setup's collaborators so it runs offline, returning
+# whether build_initial_environment was invoked.
+run_setup_capturing_build <- function(build_image) {
+  built <- FALSE
+  mockery::stub(starburst_setup, "is_setup_complete", function() FALSE)
+  mockery::stub(starburst_setup, "check_aws_credentials", function() TRUE)
+  mockery::stub(starburst_setup, "get_aws_account_id", function() "123456789012")
+  mockery::stub(starburst_setup, "create_starburst_bucket", function(...) "starburst-test")
+  mockery::stub(starburst_setup, "create_ecr_repository", function(...) list(repositoryUri = "uri"))
+  mockery::stub(starburst_setup, "create_ecs_cluster", function(...) list(clusterName = "starburst-cluster"))
+  mockery::stub(starburst_setup, "setup_vpc_resources",
+    function(...) list(vpc_id = "vpc-1", subnets = list(), security_groups = list()))
+  mockery::stub(starburst_setup, "save_config", function(...) invisible())
+  mockery::stub(starburst_setup, "check_fargate_quota",
+    function(...) list(limit = 1000, used = 0, available = 1000, increase_pending = FALSE))
+  mockery::stub(starburst_setup, "build_initial_environment", function(...) built <<- TRUE)
+  starburst_setup(force = TRUE, build_image = build_image)
+  built
+}
+
+test_that("starburst_setup skips image build when build_image = FALSE", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  expect_false(run_setup_capturing_build(build_image = FALSE))
+})
+
+test_that("starburst_setup builds image when build_image = TRUE (default)", {
+  skip_on_cran()
+  skip_if_not_installed("mockery")
+
+  expect_true(run_setup_capturing_build(build_image = TRUE))
+})

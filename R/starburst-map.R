@@ -1,15 +1,21 @@
-#' Map Function Over Data Using AWS Fargate
+#' Map a Function Over Data on AWS Workers
 #'
-#' Parallel map function that executes on AWS Fargate using the Future backend
+#' Parallel map function that executes across AWS workers (EC2 by default, or
+#' Fargate) using the staRburst Future backend.
 #'
 #' @param .x A vector or list to iterate over
 #' @param .f A function to apply to each element
 #' @param workers Number of parallel workers (default: 10)
 #' @param cpu CPU units per worker (1, 2, 4, 8, or 16)
 #' @param memory Memory per worker (e.g., 8GB)
-#' @param platform CPU architecture (X86_64 or ARM64)
 #' @param region AWS region
 #' @param timeout Maximum runtime in seconds per task
+#' @param launch_type Compute backend: "EC2" (default) or "FARGATE"
+#' @param instance_type EC2 instance type when \code{launch_type = "EC2"}
+#'   (default: "c7g.xlarge"). The worker CPU architecture follows the instance
+#'   type — Graviton types (e.g. \code{c7g.*}) run ARM64, Intel/AMD types
+#'   (e.g. \code{c7i.*}) run x86_64 — so there is no separate platform argument.
+#' @param use_spot Use EC2 Spot instances for cost savings (default: TRUE)
 #' @param .progress Show progress bar (default: TRUE)
 #' @param ... Additional arguments passed to .f
 #'
@@ -30,17 +36,21 @@
 #'     cpu = 4,
 #'     memory = "8GB"
 #'   )
+#'
+#'   # Use the Fargate backend instead of the EC2 default
+#'   results <- starburst_map(1:100, function(x) x^2,
+#'                            workers = 10, launch_type = "FARGATE")
 #' }
 #' }
 starburst_map <- function(.x, .f, workers = 10, cpu = 4, memory = "8GB",
-                          platform = "X86_64", region = NULL, timeout = 3600,
-                          .progress = TRUE, ...) {
+                          region = NULL, timeout = 3600,
+                          launch_type = "EC2", instance_type = "c7g.xlarge",
+                          use_spot = TRUE, .progress = TRUE, ...) {
 
   # Validate inputs
   validate_workers(workers)
   validate_cpu(cpu)
   validate_memory(memory)
-  validate_platform(platform)
 
   # Get configuration
   config <- get_starburst_config()
@@ -65,9 +75,11 @@ starburst_map <- function(.x, .f, workers = 10, cpu = 4, memory = "8GB",
     workers = workers,
     cpu = cpu,
     memory = memory,
-    platform = platform,
     region = region,
-    timeout = timeout
+    timeout = timeout,
+    launch_type = launch_type,
+    instance_type = instance_type,
+    use_spot = use_spot
   )
 
   future::plan(strategy)
@@ -154,11 +166,15 @@ starburst_map <- function(.x, .f, workers = 10, cpu = 4, memory = "8GB",
     elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
     cat_success(sprintf("\n[OK] Completed in %.1f seconds\n", elapsed))
 
-    # Cost estimate
-    cost_est <- estimate_cost(workers, cpu, memory)
+    # Cost estimate — forward the actual backend/instance/spot so the estimate
+    # matches where the job ran (previously always used Fargate defaults).
+    cost_est <- estimate_cost(workers, cpu, memory,
+                              launch_type = launch_type,
+                              instance_type = instance_type,
+                              use_spot = use_spot)
     hours <- elapsed / 3600
-    actual_cost <- cost_est$per_hour * hours
-    cat_info(sprintf("[Cost] Estimated cost: $%.2f\n", actual_cost))
+    est_cost <- cost_est$hourly_rate * hours
+    cat_info(sprintf("[Cost] Estimated cost: $%.2f\n", est_cost))
   }
 
   results
@@ -166,14 +182,20 @@ starburst_map <- function(.x, .f, workers = 10, cpu = 4, memory = "8GB",
 
 #' Create a Starburst Cluster
 #'
-#' Creates a cluster object for managing AWS Fargate workers using Future backend
+#' Creates a cluster object for managing AWS workers (EC2 by default, or Fargate)
+#' using the staRburst Future backend.
 #'
 #' @param workers Number of parallel workers
 #' @param cpu CPU units per worker
 #' @param memory Memory per worker
-#' @param platform CPU architecture (X86_64 or ARM64)
 #' @param region AWS region
 #' @param timeout Maximum runtime in seconds
+#' @param launch_type Compute backend: "EC2" (default) or "FARGATE"
+#' @param instance_type EC2 instance type when \code{launch_type = "EC2"}
+#'   (default: "c7g.xlarge"). Worker CPU architecture follows the instance type
+#'   (Graviton \code{*g.*} = ARM64, Intel/AMD = x86_64); there is no separate
+#'   platform argument.
+#' @param use_spot Use EC2 Spot instances for cost savings (default: TRUE)
 #'
 #' @return A starburst_cluster object
 #' @export
@@ -183,10 +205,15 @@ starburst_map <- function(.x, .f, workers = 10, cpu = 4, memory = "8GB",
 #' if (starburst_is_configured()) {
 #'   cluster <- starburst_cluster(workers = 20)
 #'   results <- cluster$map(data, function(x) x * 2)
+#'
+#'   # Fargate backend instead of the EC2 default
+#'   fg <- starburst_cluster(workers = 20, launch_type = "FARGATE")
 #' }
 #' }
 starburst_cluster <- function(workers = 10, cpu = 4, memory = "8GB",
-                              platform = "X86_64", region = NULL, timeout = 3600) {
+                              region = NULL, timeout = 3600,
+                              launch_type = "EC2", instance_type = "c7g.xlarge",
+                              use_spot = TRUE) {
 
   # Get configuration
   config <- get_starburst_config()
@@ -198,9 +225,11 @@ starburst_cluster <- function(workers = 10, cpu = 4, memory = "8GB",
     workers = workers,
     cpu = cpu,
     memory = memory,
-    platform = platform,
     region = region,
-    timeout = timeout
+    timeout = timeout,
+    launch_type = launch_type,
+    instance_type = instance_type,
+    use_spot = use_spot
   )
 
   future::plan(strategy)
@@ -217,6 +246,9 @@ starburst_cluster <- function(workers = 10, cpu = 4, memory = "8GB",
     cpu = backend$cpu,
     memory = backend$memory,
     region = backend$region,
+    launch_type = launch_type,
+    instance_type = instance_type,
+    use_spot = use_spot,
     created_at = backend$created_at
   )
 
@@ -226,9 +258,12 @@ starburst_cluster <- function(workers = 10, cpu = 4, memory = "8GB",
   }
 
   cluster$estimate_cost <- function(elapsed_seconds) {
-    cost_est <- estimate_cost(cluster$workers, cluster$cpu, cluster$memory)
+    cost_est <- estimate_cost(cluster$workers, cluster$cpu, cluster$memory,
+                              launch_type = cluster$launch_type,
+                              instance_type = cluster$instance_type,
+                              use_spot = cluster$use_spot)
     hours <- elapsed_seconds / 3600
-    cost_est$per_hour * hours
+    cost_est$hourly_rate * hours
   }
 
   cluster$shutdown <- function() {
@@ -281,7 +316,7 @@ starburst_cluster_map <- function(cluster, .x, .f, .progress = TRUE) {
 
   # Run all futures (submits to AWS)
   if (.progress) {
-    cat_info(sprintf("[Starting] Submitting %d tasks to AWS Fargate...\n", n))
+    cat_info(sprintf("[Starting] Submitting %d tasks to AWS...\n", n))
   }
 
   for (future in futures) {

@@ -547,13 +547,13 @@ delivered by end of business day</p>
 <span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
 <span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>local_time <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">difftime</span>(<span class="fu">Sys.time</span>(), local_start, <span class="at">units =</span> <span class="st">&quot;secs&quot;</span>))</span>
 <span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;✓ Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;[OK] Completed in %.1f seconds</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time))</span>
 <span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Average: %.1f seconds per report</span><span class="sc">\n</span><span class="st">&quot;</span>, local_time <span class="sc">/</span> <span class="dv">5</span>))</span>
 <span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimated time for %d reports: %.1f minutes</span><span class="sc">\n\n</span><span class="st">&quot;</span>,</span>
 <span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>            n_customers, (local_time <span class="sc">/</span> <span class="dv">5</span> <span class="sc">*</span> n_customers) <span class="sc">/</span> <span class="dv">60</span>))</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>Rendering 5 reports locally...
-✓ Completed in 23.4 seconds
+[OK] Completed in 23.4 seconds
   Average: 4.7 seconds per report
   Estimated time for 50 reports: 3.9 minutes</code></pre>
 </div>
@@ -572,17 +572,13 @@ delivered by end of business day</p>
 <span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="at">cpu =</span> <span class="dv">2</span>,</span>
 <span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  <span class="at">memory =</span> <span class="st">&quot;4GB&quot;</span></span>
 <span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
-<pre><code>🚀 Starting starburst cluster with 25 workers
-💰 Estimated cost: ~$2.00/hour
-📊 Processing 50 items with 25 workers
-📦 Created 25 chunks (avg 2 items per chunk)
-🚀 Submitting tasks...
-✓ Submitted 25 tasks
-⏳ Progress: 25/25 tasks (0.4 minutes elapsed)
-
-✓ Completed in 0.4 minutes
-💰 Actual cost: $0.01</code></pre>
+<p><strong>Illustrative output</strong>:</p>
+<pre><code>[Starting] Starting starburst cluster with 25 workers
+[Status] Processing 50 items with 25 workers
+[Starting] Submitting 50 tasks...
+[Wait] Progress: 50/50 (24.0s)
+[OK] Completed in 24.0 seconds
+[Cost] Estimated cost: $0.01</code></pre>
 </div>
 <div id="results-processing" class="section level2">
 <h2>Results Processing</h2>
@@ -611,7 +607,7 @@ delivered by end of business day</p>
 <span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Generated reports:</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
 <span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a>report_files <span class="ot">&lt;-</span> <span class="fu">sapply</span>(successful_results[<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>], <span class="cf">function</span>(x) x<span class="sc">$</span>output_file)</span>
 <span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="fu">print</span>(report_files)</span></code></pre></div>
-<p><strong>Typical output</strong>:</p>
+<p><strong>Illustrative output</strong>:</p>
 <pre><code>=== Report Generation Summary ===
 
 Total reports: 50
@@ -630,53 +626,19 @@ Generated reports:
  [7] &quot;report_CUST007.html&quot; &quot;report_CUST008.html&quot;
  [9] &quot;report_CUST009.html&quot; &quot;report_CUST010.html&quot;</code></pre>
 </div>
-<div id="performance-comparison" class="section level2">
-<h2>Performance Comparison</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Method</th>
-<th>Reports</th>
-<th>Time</th>
-<th>Cost</th>
-<th>Speedup</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Local</td>
-<td>50</td>
-<td>3.9 min</td>
-<td>$0</td>
-<td>1x</td>
-</tr>
-<tr class="even">
-<td>staRburst</td>
-<td>50 (10 workers)</td>
-<td>1.2 min</td>
-<td>$0.004</td>
-<td>3.3x</td>
-</tr>
-<tr class="odd">
-<td>staRburst</td>
-<td>50 (25 workers)</td>
-<td>0.4 min</td>
-<td>$0.01</td>
-<td>9.8x</td>
-</tr>
-<tr class="even">
-<td>staRburst</td>
-<td>50 (50 workers)</td>
-<td>0.3 min</td>
-<td>$0.02</td>
-<td>13x</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Key Insights</strong>: - Near-linear scaling with worker
-count - Sweet spot: 25-50 workers for this workload - Minimal cost
-($0.01) for significant time savings - Can easily scale to 500+
-reports</p>
+<div id="performance" class="section level2">
+<h2>Performance</h2>
+<p>Report generation is a <strong>genuine fit</strong> for bursting:
+each report takes ~1–2 minutes to render, so with dozens-to-hundreds of
+them the per-task work dwarfs the one-time startup — exactly the shape
+that wins (unlike the seconds-scale demos). One report per task is the
+right granularity here (no batching needed).</p>
+<p>We don’t hand-write speedup tables in the examples. For
+<strong>measured</strong> numbers — a workload where the cloud wins, one
+where it loses, and how to size workers — see
+<code>vignette(&quot;performance&quot;)</code> and
+<code>vignette(&quot;workload-shapes&quot;)</code>, and regenerate figures for
+your own workload with <code>bench/benchmark.R</code>.</p>
 </div>
 <div id="advanced-custom-report-distribution" class="section level2">
 <h2>Advanced: Custom Report Distribution</h2>
