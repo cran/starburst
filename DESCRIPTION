@@ -1,7 +1,7 @@
 Package: starburst
 Type: Package
 Title: Seamless AWS Cloud Bursting for Parallel R Workloads
-Version: 0.3.9
+Version: 0.3.10
 Authors@R: c(
     person("Scott", "Friedman", email = "help@starburst.ing", role = c("aut", "cre"))
     )
@@ -24,8 +24,8 @@ URL: https://starburst.ing, https://github.com/scttfrdmn/starburst
 BugReports: https://github.com/scttfrdmn/starburst/issues
 Config/roxygen2/version: 8.0.0
 NeedsCompilation: no
-Packaged: 2026-07-22 16:56:23 UTC; scttfrdmn
+Packaged: 2026-10-24 05:42:28 UTC; root
 Author: Scott Friedman [aut, cre]
 Maintainer: Scott Friedman <help@starburst.ing>
 Repository: CRAN
-Date/Publication: 2026-07-22 17:50:02 UTC
+Date/Publication: 2026-10-24 18:20:02 UTC
