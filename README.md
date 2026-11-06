@@ -278,6 +278,8 @@ Full documentation available at
 ## Requirements
 
 - R \>= 4.0
+- Docker, running locally (worker images are built with `docker buildx`
+  and pushed to your ECR repository)
 - AWS account with:
   - AWS CLI configured or `AWS_PROFILE` set
   - IAM permissions for ECS, ECR, S3, VPC
@@ -290,7 +292,13 @@ Started](https://starburst.ing/articles/getting-started.html) guide.
 
 ## Roadmap
 
-### v0.3.10 (current CRAN release)
+### v0.3.11 (current CRAN release)
+
+- ✅ `plan(starburst)` futures, `starburst_map()` and `starburst_cluster()`
+  work on real AWS again (broken since 0.3.0; sessions were unaffected)
+- ✅ Worker errors are reported with their real message
+
+### v0.3.10
 
 - ✅ Locally built base images now install `cmake` and fail loudly if
   any worker package (e.g. `qs2`) does not install
@@ -345,7 +353,7 @@ Copyright 2026 Scott Friedman
   title = {staRburst: Seamless AWS Cloud Bursting for R},
   author = {Scott Friedman},
   year = {2026},
-  version = {0.3.10},
+  version = {0.3.11},
   url = {https://starburst.ing},
   license = {Apache-2.0}
 }

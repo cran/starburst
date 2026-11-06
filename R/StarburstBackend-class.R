@@ -2,6 +2,11 @@
 #'
 #' A future backend for running parallel R workloads on AWS ECS
 #'
+#' You do not normally call this constructor yourself: \code{plan(starburst, ...)}
+#' creates the backend for you (see \code{\link{plan.starburst}}, whose defaults
+#' are the ones users see). It is exported as an extension point for code that
+#' builds on the \pkg{future} backend API.
+#'
 #' @param workers Number of parallel workers
 #' @param cpu vCPUs per worker (1, 2, 4, 8, or 16)
 #' @param memory Memory per worker (supports GB notation, e.g., "8GB")
@@ -14,6 +19,7 @@
 #' @param ... Additional arguments
 #'
 #' @return A StarburstBackend object
+#' @seealso \code{\link{plan.starburst}}
 #' @export
 StarburstBackend <- function(workers = 10,
                              cpu = 4,
@@ -33,17 +39,9 @@ StarburstBackend <- function(workers = 10,
   # For EC2, auto-adjust cpu/memory based on instance type
   if (launch_type == "EC2") {
     validate_instance_type(instance_type)
-    instance_specs <- get_instance_specs(instance_type)
-
-    # Use max available resources on instance
-    # For ECS, valid CPU values are: 0.25, 0.5, 1, 2, 4, 8, 16
-    # Use the largest valid value that fits on the instance
-    valid_cpus <- c(0.25, 0.5, 1, 2, 4, 8, 16)
-    cpu <- max(valid_cpus[valid_cpus <= instance_specs$vcpus])
-
-    # Memory: use instance capacity minus 512MB for ECS agent overhead
-    memory_gb <- instance_specs$memory_gb - 0.5
-    memory <- sprintf("%dGB", floor(memory_gb))
+    resources <- ec2_worker_resources(instance_type)
+    cpu <- resources$cpu
+    memory <- resources$memory
 
     cat_info(sprintf("   * Using instance resources: %g vCPUs, %s memory\n", cpu, memory))
   }
@@ -141,6 +139,17 @@ StarburstBackend <- function(workers = 10,
 #' @param ... Arguments passed to StarburstBackend()
 #' @return Does not return a value; always signals an error if called directly.
 #'   This object exists as a strategy marker for \code{\link[future]{plan}}.
+#' @seealso \code{\link{plan.starburst}} for the worker, backend, and cost arguments.
+#' @examples
+#' \donttest{
+#' if (starburst_is_configured()) {
+#'   # Pass `starburst` to plan(); existing future code then runs on AWS workers
+#'   future::plan(starburst, workers = 4)
+#'   f <- future::future(Sys.info()[["nodename"]])
+#'   future::value(f)
+#'   future::plan(future::sequential)
+#' }
+#' }
 #' @export
 starburst <- function(...) {
   stop("INTERNAL ERROR: The starburst() function must never be called directly. Use plan(starburst, ...) instead.")
@@ -196,10 +205,11 @@ launchFuture.StarburstBackend <- function(backend, future, ...) {
   # The future should already be created by the future package
   # We just need to submit it to ECS and update its state
 
-  # Get backend environment from options or attribute
-  backend_env <- getOption("starburst.current_backend")
+  # Get backend environment from this backend's attribute, falling back to
+  # options (which starburst_map()/starburst_cluster() also overwrite)
+  backend_env <- attr(backend, "backend")
   if (is.null(backend_env)) {
-    backend_env <- attr(backend, "backend")
+    backend_env <- getOption("starburst.current_backend")
   }
 
   if (is.null(backend_env)) {
