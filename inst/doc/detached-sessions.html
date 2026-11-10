@@ -355,8 +355,9 @@ your laptop</li>
 session</li>
 <li><strong>Fault tolerant</strong>: Your computations continue even if
 your local R crashes</li>
-<li><strong>Cost efficient</strong>: Workers auto-scale down when
-idle</li>
+<li><strong>Cost efficient</strong>: Instances are released
+<code>warm_pool_timeout</code> seconds after the last submission
+(default 10 minutes), even if your R session is gone</li>
 </ul>
 </div>
 <div id="basic-usage" class="section level2">

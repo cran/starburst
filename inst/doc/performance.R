@@ -45,13 +45,15 @@ knitr::opts_chunk$set(eval = FALSE)
 # }
 
 ## ----warm-pool----------------------------------------------------------------
-# # Start warm pool once in the morning
-# plan(starburst, workers = 50, warm_pool_timeout = 28800)  # 8 hours
+# # Set the plan once in the morning. Instances stay up until 2 hours after the
+# # last submission, so later runs skip the startup.
+# plan(starburst, workers = 50, warm_pool_timeout = 7200)
 # 
-# # All runs during the day start in < 30s
-# results_am <- starburst_map(morning_data, process)
-# results_pm <- starburst_map(afternoon_data, process)
-# # Pool shuts down automatically after 8 hours of inactivity
+# results_am <- future.apply::future_lapply(morning_data, process)
+# results_pm <- future.apply::future_lapply(afternoon_data, process)
+# 
+# # Released 2 hours after the last submission, even if R has exited
+# plan(sequential)
 
 ## ----hybrid-------------------------------------------------------------------
 # # Iterate quickly on a small sample locally

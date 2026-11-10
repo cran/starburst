@@ -669,13 +669,19 @@ HPC cluster:       Use your cluster</code></pre>
 </div>
 <div id="pattern-daily-production-job-keep-warm-pool" class="section level3">
 <h3>Pattern: Daily production job — keep warm pool</h3>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Start warm pool once in the morning</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="fu">plan</span>(starburst, <span class="at">workers =</span> <span class="dv">50</span>, <span class="at">warm_pool_timeout =</span> <span class="dv">28800</span>)  <span class="co"># 8 hours</span></span>
-<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a></span>
-<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="co"># All runs during the day start in &lt; 30s</span></span>
-<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>results_am <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(morning_data, process)</span>
-<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>results_pm <span class="ot">&lt;-</span> <span class="fu">starburst_map</span>(afternoon_data, process)</span>
-<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a><span class="co"># Pool shuts down automatically after 8 hours of inactivity</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="co"># Set the plan once in the morning. Instances stay up until 2 hours after the</span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co"># last submission, so later runs skip the startup.</span></span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a><span class="fu">plan</span>(starburst, <span class="at">workers =</span> <span class="dv">50</span>, <span class="at">warm_pool_timeout =</span> <span class="dv">7200</span>)</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>results_am <span class="ot">&lt;-</span> future.apply<span class="sc">::</span><span class="fu">future_lapply</span>(morning_data, process)</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>results_pm <span class="ot">&lt;-</span> future.apply<span class="sc">::</span><span class="fu">future_lapply</span>(afternoon_data, process)</span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a></span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a><span class="co"># Released 2 hours after the last submission, even if R has exited</span></span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span></code></pre></div>
+<p>Warm instances bill while they wait, so size
+<code>warm_pool_timeout</code> to the gap between runs.
+<code>starburst_map()</code> and <code>starburst_cluster()</code> don’t
+keep a pool: they release their instances when they finish.</p>
 </div>
 <div id="pattern-hybrid-develop-local-scale-on-cloud" class="section level3">
 <h3>Pattern: Hybrid — develop local, scale on cloud</h3>
